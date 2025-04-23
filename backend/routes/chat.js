@@ -4,11 +4,15 @@ import AIChat from '../models/AIChat.js';
 import Course from '../models/Course.js';
 import { authenticateToken } from '../middleware/auth.js';
 import fetch from 'node-fetch';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 const router = express.Router();
 
-// Groq API key
-const GROQ_API_KEY = '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';
+// Groq API key from environment variables
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 // Function to call Groq API
 const callGroqAPI = async (prompt, temperature = 0.7, maxTokens = 2048) => {
@@ -138,6 +142,25 @@ router.get('/chats/:id', authenticateToken, async (req, res) => {
 router.post('/ai', authenticateToken, async (req, res) => {
   try {
     const { message, type } = req.body;
+    
+    // Check if the message is asking about AI identity
+    const identityQuestionPattern = /which ai|what ai|are you groq|who are you/i;
+    if (identityQuestionPattern.test(message)) {
+      console.log('Identity question detected in chat.js, providing custom response');
+      
+      const customResponse = "Hey there! 👋\n\nI'm Epsilora AI, your educational assistant! I'm here to help you learn and grow. How can I assist you today? 😊";
+      
+      // Save the chat history with custom response
+      const chat = new AIChat({
+        userId: req.user.id,
+        message: message,
+        response: customResponse,
+        type: type || 'general'
+      });
+      await chat.save();
+      
+      return res.json({ message: customResponse });
+    }
     
     let prompt = message;
     if (type === 'quiz_explanation') {

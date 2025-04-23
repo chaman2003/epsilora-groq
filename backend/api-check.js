@@ -8,8 +8,8 @@ import fetch from 'node-fetch';
 // Load environment variables
 dotenv.config();
 
-// Groq API key
-const GROQ_API_KEY = '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';
+// Groq API key from environment variables
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 async function main() {
   console.log('===== API Connection Test =====');

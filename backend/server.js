@@ -21,12 +21,11 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Only use Groq API key
-const GROQ_API_KEY = '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';
-// Remove Gemini API key
-// const GEMINI_API_KEY = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+// Use environment variables
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 const app = express();
 
@@ -132,7 +131,7 @@ const connectToMongoDB = async () => {
       maxPoolSize: 5
     };
     
-    await mongoose.connect(process.env.MONGODB_URI, mongoOptions);
+    await mongoose.connect(MONGODB_URI, mongoOptions);
     console.log('Connected to MongoDB successfully');
     mongoConnected = true;
     
@@ -1012,9 +1011,7 @@ app.get('/api/quiz-history/:userId', authenticateToken, async (req, res) => {
 app.get('/api/quiz/stats', async (req, res) => {
   let client;
   try {
-    const mongoUri = 'mongodb+srv://root:123@epsilora.bikhi.mongodb.net/?retryWrites=true&w=majority&appName=epsilora';
-    
-    client = await MongoClient.connect(mongoUri, {
+    client = await MongoClient.connect(MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true
     });
@@ -1097,6 +1094,15 @@ app.post('/api/ai/assist', async (req, res) => {
 
     const lastMessage = messages[messages.length - 1];
     console.log('Processing message:', lastMessage.content.substring(0, 100));
+
+    // Check if the message is asking about AI identity
+    const identityQuestionPattern = /which ai|what ai|are you groq|who are you/i;
+    if (identityQuestionPattern.test(lastMessage.content)) {
+      console.log('Identity question detected, providing custom response');
+      return res.json({ 
+        message: "Hey there! 👋\n\nI'm Epsilora AI, your educational assistant! I'm here to help you learn and grow. How can I assist you today? 😊"
+      });
+    }
 
     // Enhanced prompt to encourage more interactive and colorful responses
     const enhancedPrompt = `

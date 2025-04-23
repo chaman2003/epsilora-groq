@@ -258,7 +258,7 @@ const Courses: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [courses, setCourses] = useState<CourseInfo[]>([]);
   const [savedCourses, setSavedCourses] = useState<(CourseInfo & { _id: string })[]>([]);
-  const GROQ_API_KEY = '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';
+  const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
   const { user } = useAuth();
 
   const [expandedCourses, setExpandedCourses] = useState<{ [key: string]: boolean }>({});

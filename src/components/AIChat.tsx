@@ -178,7 +178,7 @@ const StyledMarkdown: React.FC<{ content: string; isQuiz?: boolean }> = ({ conte
 };
 
 // Define the Groq API key
-const GROQ_API_KEY = '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';
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
 const AIChat: React.FC<AIChatProps> = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState<Array<{ text: string; isUser: boolean }>>([]);
@@ -249,6 +249,20 @@ const AIChat: React.FC<AIChatProps> = ({ isOpen, onClose }) => {
     setMessages(prev => [...prev, { text: userMessage, isUser: true }]);
     setInputMessage('');
     setIsLoading(true);
+
+    // Check if the message is asking about the AI's identity
+    const identityQuestionPattern = /which ai|what ai|are you groq|who are you/i;
+    if (identityQuestionPattern.test(userMessage)) {
+      // Custom response for identity questions
+      setTimeout(() => {
+        setMessages(prev => [...prev, { 
+          text: "Hey there! 👋\n\nI'm Epsilora AI, your educational assistant! I'm here to help you learn and grow. How can I assist you today? 😊", 
+          isUser: false 
+        }]);
+        setIsLoading(false);
+      }, 500);
+      return;
+    }
 
     try {
       // Use Groq API instead of Gemini

@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Card } from '@tremor/react';
 import { motion } from 'framer-motion';
 
-// Define Groq API key
-const GROQ_API_KEY = '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';
+// Use environment variable instead of hardcoded API key
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
 interface Quote {
   text: string;
