@@ -1,0 +1,40 @@
+{
+  "name": "epsilora-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "vercel-build": "echo 'Preparing for deployment'",
+    "check": "node api-check.js"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "@google-ai/generativelanguage": "^3.1.0",
+    "@google/generative-ai": "^0.2.1",
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "google-auth-library": "^10.0.0-rc.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^5.9.2",
+    "mongodb-connection-string-url": "^2.6.0",
+    "mongoose": "^7.8.6",
+    "node-fetch": "^3.3.2",
+    "react-hot-toast": "^2.4.1",
+    "webidl-conversions": "^7.0.0",
+    "whatwg-url": "^13.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "main": "server.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Backend API for Epsilora educational platform"
+}
