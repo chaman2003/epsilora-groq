@@ -10,10 +10,6 @@ app.use(cors({
       'https://epsilora-groq.vercel.app',
       'https://epsilora-groq-git-main-chaman2003.vercel.app',
       'https://epsilora-groq-chaman2003.vercel.app',
-      'https://epsilora.vercel.app',
-      'https://epsilora-chaman-ss-projects.vercel.app',
-      'https://epsilora-git-master-chaman-ss-projects.vercel.app',
-      'https://epsilora-8f6lvf0o2-chaman-ss-projects.vercel.app',
       'http://localhost:3000',
       'http://localhost:3002',
       'http://localhost:5173'
@@ -22,9 +18,7 @@ app.use(cors({
     // Allow requests with no origin or any Vercel deployment URL
     if (!origin || 
         allowedOrigins.includes(origin) || 
-        /^https:\/\/epsilora-.*-chaman-ss-projects\.vercel\.app$/.test(origin) ||
-        /^https:\/\/epsilora-groq.*\.vercel\.app$/.test(origin) ||
-        /^https:\/\/epsilora.*\.vercel\.app$/.test(origin)) {
+        /^https:\/\/epsilora-groq.*\.vercel\.app$/.test(origin)) {
       callback(null, true);
     } else {
       console.log(`CORS blocked origin: ${origin}`);
@@ -45,10 +39,6 @@ app.options('*', (req, res) => {
     'https://epsilora-groq.vercel.app',
     'https://epsilora-groq-git-main-chaman2003.vercel.app',
     'https://epsilora-groq-chaman2003.vercel.app',
-    'https://epsilora.vercel.app',
-    'https://epsilora-chaman-ss-projects.vercel.app',
-    'https://epsilora-git-master-chaman-ss-projects.vercel.app',
-    'https://epsilora-8f6lvf0o2-chaman-ss-projects.vercel.app',
     'http://localhost:3000',
     'http://localhost:3002',
     'http://localhost:5173'
@@ -56,9 +46,7 @@ app.options('*', (req, res) => {
   
   // Set appropriate Access-Control-Allow-Origin
   if (origin && (allowedOrigins.includes(origin) || 
-      /^https:\/\/epsilora-.*-chaman-ss-projects\.vercel\.app$/.test(origin) ||
-      /^https:\/\/epsilora-groq.*\.vercel\.app$/.test(origin) ||
-      /^https:\/\/epsilora.*\.vercel\.app$/.test(origin))) {
+      /^https:\/\/epsilora-groq.*\.vercel\.app$/.test(origin))) {
     res.header('Access-Control-Allow-Origin', origin);
   } else {
     // Fallback for development
@@ -77,7 +65,7 @@ app.use('/api/generate-quiz', (req, res, next) => {
   // Set CORS headers immediately for this specific route
   const origin = req.headers.origin;
   
-  if (origin && (origin === 'https://epsilora-groq.vercel.app' || origin === 'https://epsilora.vercel.app')) {
+  if (origin && origin === 'https://epsilora-groq.vercel.app') {
     res.header('Access-Control-Allow-Origin', origin);
   } else {
     res.header('Access-Control-Allow-Origin', 'https://epsilora-groq.vercel.app');

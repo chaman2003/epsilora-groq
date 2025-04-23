@@ -37,10 +37,6 @@ const corsOptions = {
       'https://epsilora-groq.vercel.app',
       'https://epsilora-groq-git-main-chaman2003.vercel.app',
       'https://epsilora-groq-chaman2003.vercel.app',
-      'https://epsilora.vercel.app',
-      'https://epsilora-chaman-ss-projects.vercel.app',
-      'https://epsilora-git-master-chaman-ss-projects.vercel.app',
-      'https://epsilora-8f6lvf0o2-chaman-ss-projects.vercel.app',
       'http://localhost:3000',
       'http://localhost:3002',
       'http://localhost:5173',
@@ -53,8 +49,6 @@ const corsOptions = {
       callback(null, true); // Allow requests with no origin
     } else if (
         allowedOrigins.includes(origin) || 
-        /^https:\/\/epsilora-.*-chaman-ss-projects\.vercel\.app$/.test(origin) ||
-        /^https:\/\/epsilora.*\.vercel\.app$/.test(origin) ||
         /^https:\/\/epsilora-groq.*\.vercel\.app$/.test(origin)) {
       callback(null, origin); // Reflect the request origin in the response
     } else {
