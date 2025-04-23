@@ -34,6 +34,9 @@ const app = express();
 const corsOptions = {
   origin: function(origin, callback) {
     const allowedOrigins = [
+      'https://epsilora-groq.vercel.app',
+      'https://epsilora-groq-git-main-chaman2003.vercel.app',
+      'https://epsilora-groq-chaman2003.vercel.app',
       'https://epsilora.vercel.app',
       'https://epsilora-chaman-ss-projects.vercel.app',
       'https://epsilora-git-master-chaman-ss-projects.vercel.app',
@@ -51,7 +54,8 @@ const corsOptions = {
     } else if (
         allowedOrigins.includes(origin) || 
         /^https:\/\/epsilora-.*-chaman-ss-projects\.vercel\.app$/.test(origin) ||
-        /^https:\/\/epsilora.*\.vercel\.app$/.test(origin)) {
+        /^https:\/\/epsilora.*\.vercel\.app$/.test(origin) ||
+        /^https:\/\/epsilora-groq.*\.vercel\.app$/.test(origin)) {
       callback(null, origin); // Reflect the request origin in the response
     } else {
       console.log(`CORS blocked origin: ${origin}`);

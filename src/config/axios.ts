@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-// Use the same backend URL as in utils/axios.ts for consistency
+// Use the Vercel deployed backend URL
 const instance = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://epsilora-backend.vercel.app',
+  baseURL: import.meta.env.VITE_API_URL || 'https://epsilora-groq-backend.vercel.app',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',

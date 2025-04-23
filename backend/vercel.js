@@ -7,6 +7,9 @@ import cors from 'cors';
 app.use(cors({
   origin: function(origin, callback) {
     const allowedOrigins = [
+      'https://epsilora-groq.vercel.app',
+      'https://epsilora-groq-git-main-chaman2003.vercel.app',
+      'https://epsilora-groq-chaman2003.vercel.app',
       'https://epsilora.vercel.app',
       'https://epsilora-chaman-ss-projects.vercel.app',
       'https://epsilora-git-master-chaman-ss-projects.vercel.app',
@@ -20,6 +23,7 @@ app.use(cors({
     if (!origin || 
         allowedOrigins.includes(origin) || 
         /^https:\/\/epsilora-.*-chaman-ss-projects\.vercel\.app$/.test(origin) ||
+        /^https:\/\/epsilora-groq.*\.vercel\.app$/.test(origin) ||
         /^https:\/\/epsilora.*\.vercel\.app$/.test(origin)) {
       callback(null, true);
     } else {
@@ -38,6 +42,9 @@ app.options('*', (req, res) => {
   // Set CORS headers based on origin
   const origin = req.headers.origin;
   const allowedOrigins = [
+    'https://epsilora-groq.vercel.app',
+    'https://epsilora-groq-git-main-chaman2003.vercel.app',
+    'https://epsilora-groq-chaman2003.vercel.app',
     'https://epsilora.vercel.app',
     'https://epsilora-chaman-ss-projects.vercel.app',
     'https://epsilora-git-master-chaman-ss-projects.vercel.app',
@@ -50,6 +57,7 @@ app.options('*', (req, res) => {
   // Set appropriate Access-Control-Allow-Origin
   if (origin && (allowedOrigins.includes(origin) || 
       /^https:\/\/epsilora-.*-chaman-ss-projects\.vercel\.app$/.test(origin) ||
+      /^https:\/\/epsilora-groq.*\.vercel\.app$/.test(origin) ||
       /^https:\/\/epsilora.*\.vercel\.app$/.test(origin))) {
     res.header('Access-Control-Allow-Origin', origin);
   } else {
@@ -67,7 +75,14 @@ app.options('*', (req, res) => {
 // But without timeout guards since the user is willing to wait
 app.use('/api/generate-quiz', (req, res, next) => {
   // Set CORS headers immediately for this specific route
-  res.header('Access-Control-Allow-Origin', 'https://epsilora.vercel.app');
+  const origin = req.headers.origin;
+  
+  if (origin && (origin === 'https://epsilora-groq.vercel.app' || origin === 'https://epsilora.vercel.app')) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', 'https://epsilora-groq.vercel.app');
+  }
+  
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.header('Access-Control-Allow-Credentials', 'true');

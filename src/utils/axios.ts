@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'https://epsilora-backend.vercel.app';
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://epsilora-groq-backend.vercel.app';
 
 // Create axios instance with improved configuration
 const axiosInstance = axios.create({
