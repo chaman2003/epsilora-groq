@@ -542,20 +542,20 @@ const generateQuiz = async () => {
         throw new Error('No authentication token found');
       }
 
-    // Use the user's selected number of questions while keeping Hard difficulty
+    // Use the user's selected number of questions while using the default difficulty from env
     const quizParams = {
         courseId: selectedCourse,
       numberOfQuestions: quizDetails.numberOfQuestions, // Respect user's selection
-      difficulty: 'Hard', // Keep hardcoded to Hard difficulty
+      difficulty: import.meta.env.VITE_DEFAULT_QUIZ_DIFFICULTY || 'Hard', // Use env variable with fallback
         timePerQuestion: quizDetails.timePerQuestion
     };
 
     console.log('Sending quiz generation request with params:', quizParams);
 
-    // Update only the difficulty in the UI to reflect the hardcoded setting
+    // Update the difficulty in the UI to reflect the environment setting
     setQuizDetails(prev => ({
       ...prev,
-      difficulty: 'Hard'
+      difficulty: import.meta.env.VITE_DEFAULT_QUIZ_DIFFICULTY || 'Hard'
     }));
 
     // Send request to generate quiz

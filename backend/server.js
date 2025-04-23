@@ -32,15 +32,18 @@ const app = express();
 // CORS configuration
 const corsOptions = {
   origin: function(origin, callback) {
-    const allowedOrigins = [
-      'https://epsilora-groq.vercel.app',
-      'https://epsilora-groq-git-main-chaman2003.vercel.app',
-      'https://epsilora-groq-chaman2003.vercel.app',
-      'http://localhost:3000',
-      'http://localhost:3002',
-      'http://localhost:5173',
-      'http://localhost:5174'
-    ];
+    // Get allowed origins from environment variable or use defaults
+    const allowedOrigins = process.env.ALLOWED_ORIGINS ? 
+      process.env.ALLOWED_ORIGINS.split(',') :
+      [
+        'https://epsilora-groq.vercel.app',
+        'https://epsilora-groq-git-main-chaman2003.vercel.app',
+        'https://epsilora-groq-chaman2003.vercel.app',
+        'http://localhost:3000',
+        'http://localhost:3002',
+        'http://localhost:5173',
+        'http://localhost:5174'
+      ];
     
     // Allow requests with no origin (like mobile apps or curl requests) 
     // or any Vercel deployment URL
