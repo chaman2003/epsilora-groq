@@ -18,12 +18,6 @@ import AIAssist from './pages/AIAssist';
 import Progress from './pages/Progress';
 import ErrorBoundary from './components/ErrorBoundary';
 import { THEME_TRANSITION_DURATION } from './config/animations';
-import { installTDZErrorHandler } from './utils/tdz-debug';
-
-// Install the TDZ error handler early in the application lifecycle
-if (process.env.NODE_ENV === 'production') {
-  installTDZErrorHandler();
-}
 
 // Separate AppContent component to use the theme context
 const AppContent = () => {
