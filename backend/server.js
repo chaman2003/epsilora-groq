@@ -1038,6 +1038,8 @@ app.get('/api/quiz/history', authenticateToken, async (req, res) => {
 // Save quiz result endpoint
 app.post('/api/quiz/save-result', authenticateToken, async (req, res) => {
   try {
+    console.log('Saving quiz result, request received at:', new Date().toISOString());
+    
     const {
       courseId,
       questions,
@@ -1048,61 +1050,145 @@ app.post('/api/quiz/save-result', authenticateToken, async (req, res) => {
       timePerQuestion
     } = req.body;
 
-    // Validate required fields
-    if (!courseId || !questions || score === undefined || !totalQuestions || !difficulty) {
+    console.log('Quiz save payload courseId:', courseId);
+    console.log('Quiz save request user ID:', req.user.id);
+
+    // Enhanced validation for required fields
+    if (!courseId) {
+      console.error('Missing courseId in save-result request');
+      return res.status(400).json({
+        message: 'Missing required fields',
+        error: 'Course ID is required'
+      });
+    }
+
+    if (!questions || !Array.isArray(questions)) {
+      console.error('Missing or invalid questions array in save-result request');
+      return res.status(400).json({
+        message: 'Missing required fields',
+        error: 'Questions array is required'
+      });
+    }
+
+    if (score === undefined || totalQuestions === undefined || !difficulty) {
+      console.error('Missing quiz metadata in save-result request');
       return res.status(400).json({
         message: 'Missing required fields',
         error: 'Please provide all required quiz data'
       });
     }
 
-    // Create new quiz
+    // Verify course exists before creating quiz record
+    try {
+      const course = await Course.findById(courseId);
+      if (!course) {
+        console.error(`Course with ID ${courseId} not found`);
+        return res.status(404).json({
+          message: 'Course not found',
+          error: `No course found with ID: ${courseId}`
+        });
+      }
+      console.log(`Found course: ${course.name} (${course._id})`);
+    } catch (courseError) {
+      console.error('Error finding course:', courseError);
+      return res.status(500).json({
+        message: 'Error validating course',
+        error: courseError.message
+      });
+    }
+
+    // Create new quiz with more defensive approach
+    console.log('Creating new quiz record');
     const quiz = new Quiz({
       userId: req.user.id,
-      courseId: courseId,
-      score: score,
-      totalQuestions: totalQuestions,
+      courseId: courseId, // We know this exists now
+      score: Number(score),
+      totalQuestions: Number(totalQuestions),
       difficulty: difficulty,
       questions: questions.map(q => ({
-        question: q.question,
-        correctAnswer: q.correctAnswer,
-        userAnswer: q.answer,
-        isCorrect: q.correct,
-        timeSpent: timePerQuestion
+        question: q.question || 'Unknown question',
+        correctAnswer: q.correctAnswer || 'A',
+        userAnswer: q.userAnswer || q.answer || null,
+        isCorrect: q.isCorrect || q.correct || false,
+        timeSpent: Number(timePerQuestion) || 0
       })),
-      timeSpent: timeSpent,
+      timeSpent: Number(timeSpent) || 0,
       date: new Date()
     });
 
+    console.log('Saving quiz to database');
     await quiz.save();
+    console.log('Quiz saved successfully with ID:', quiz._id);
 
-    // Get updated quiz history
-    const updatedHistory = await Quiz.find({ userId: req.user.id })
-      .populate('courseId', 'name')
-      .sort({ date: -1 })
-      .limit(10)
-      .lean();
+    // Get updated quiz history with explicit error handling
+    let updatedHistory = [];
+    let formattedHistory = [];
+    
+    try {
+      console.log('Fetching updated quiz history');
+      updatedHistory = await Quiz.find({ userId: req.user.id })
+        .populate('courseId', 'name')
+        .sort({ date: -1 })
+        .limit(10)
+        .lean();
+      
+      console.log(`Found ${updatedHistory.length} history entries`);
+      
+      // Use safer mapping with null checks
+      formattedHistory = updatedHistory.map(quizEntry => {
+        // Handle potentially null courseId
+        const courseName = quizEntry.courseId ? quizEntry.courseId.name : 'Unknown Course';
+        const courseIdValue = quizEntry.courseId ? quizEntry.courseId._id : null;
+        
+        return {
+          id: quizEntry._id,
+          courseId: courseIdValue,
+          courseName: courseName,
+          score: quizEntry.score,
+          totalQuestions: quizEntry.totalQuestions,
+          difficulty: quizEntry.difficulty,
+          date: quizEntry.date,
+          timeSpent: quizEntry.timeSpent || 0,
+          percentageScore: quizEntry.score && quizEntry.totalQuestions ? 
+            (quizEntry.score / quizEntry.totalQuestions) * 100 : 0
+        };
+      });
+    } catch (historyError) {
+      console.error('Error fetching quiz history:', historyError);
+      // Continue without history rather than failing the entire request
+      formattedHistory = [];
+    }
 
-    const formattedHistory = updatedHistory.map(quiz => ({
-      id: quiz._id,
-      courseId: quiz.courseId._id,
-      courseName: quiz.courseId.name,
-      score: quiz.score,
-      totalQuestions: quiz.totalQuestions,
-      difficulty: quiz.difficulty,
-      date: quiz.date,
-      timeSpent: quiz.timeSpent,
-      percentageScore: (quiz.score / quiz.totalQuestions) * 100
-    }));
-
+    console.log('Sending successful response');
     res.json({
       message: 'Quiz saved successfully',
-      quiz: formattedHistory[0],
+      quiz: formattedHistory[0] || {
+        id: quiz._id,
+        score: score,
+        totalQuestions: totalQuestions,
+        difficulty: difficulty
+      },
       history: formattedHistory
     });
   } catch (error) {
     console.error('Error saving quiz:', error);
-    res.status(500).json({ message: 'Error saving quiz', error: error.message });
+    // More specific error message based on the error type
+    let errorMessage = 'Error saving quiz';
+    let details = error.message || 'An unexpected error occurred';
+    
+    if (error.name === 'ValidationError') {
+      errorMessage = 'Quiz data validation failed';
+      details = Object.values(error.errors).map(e => e.message).join(', ');
+    } else if (error.name === 'CastError') {
+      errorMessage = 'Invalid ID format';
+      details = `Invalid ${error.path}: ${error.value}`;
+    }
+    
+    res.status(500).json({ 
+      message: errorMessage, 
+      error: details,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
