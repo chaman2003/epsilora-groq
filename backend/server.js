@@ -640,320 +640,248 @@ Do not include any explanations, markdown formatting, or text outside the JSON a
       // Log the full response for debugging during development
       console.log('Raw Groq API response:', generatedText);
 
-      // Super enhanced cleaning and parsing with multiple fallback strategies
+      // Improved, more robust cleaning and pattern extraction
       let cleanedText = generatedText
         .replace(/```(json|javascript|js)?/g, '') // Remove code block markers with various language indicators
         .replace(/```/g, '')                      // Remove any remaining code block markers
-        .replace(/[\n\r\t]/g, ' ')                // Replace newlines and tabs with spaces
-        .trim();                                  // Trim whitespace
+        .trim();                                  // First just trim whitespace
       
-      console.log('Cleaned text:', cleanedText);
+      // Try to identify the JSON array more precisely
+      const jsonPattern = /(\[\s*\{[\s\S]*\}\s*\])/;
+      const match = cleanedText.match(jsonPattern);
       
-      // Handle JSON parsing errors with multiple advanced fallback strategies
-      let questions;
+      if (match && match[1]) {
+        cleanedText = match[1].trim();
+      }
+      
+      console.log('Extracted potential JSON:', cleanedText);
+      
+      // Multiple parsing strategies with detailed error handling
+      let questions = [];
+      let parsingSuccessful = false;
+      let parsingErrorDetails = [];
+      
+      // Strategy 1: Direct JSON parse
       try {
-        // Strategy 1: Find the most complete JSON array pattern
-        const jsonArrayMatch = cleanedText.match(/(\[\s*\{.*\}\s*\])/s);
-        if (jsonArrayMatch && jsonArrayMatch[1]) {
-          console.log('Found JSON array pattern, extracting...');
-          cleanedText = jsonArrayMatch[1];
-          
-          // Additional repair of common JSON issues
-          cleanedText = cleanedText
+        questions = JSON.parse(cleanedText);
+        if (Array.isArray(questions) && questions.length > 0) {
+          console.log(`Successfully parsed ${questions.length} questions with direct JSON parsing`);
+          parsingSuccessful = true;
+        } else {
+          throw new Error('Parsed result is not a valid array of questions');
+        }
+      } catch (directParseError) {
+        parsingErrorDetails.push(`Direct parse error: ${directParseError.message}`);
+        console.log('Direct JSON parsing failed, trying alternative strategies...');
+        
+        // Strategy 2: Fix common JSON issues before parsing
+        try {
+          // Enhanced JSON cleaning and repair
+          const fixedJson = cleanedText
             .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Ensure property names are quoted
-            .replace(/,\s*}/g, '}')                               // Remove trailing commas in objects
-            .replace(/,\s*]/g, ']');                              // Remove trailing commas in arrays
-        }
-        
-        // Try to parse the JSON
-        console.log('Attempting to parse JSON...');
-        try {
-          questions = JSON.parse(cleanedText);
+            .replace(/:\s*'([^']*)'/g, ':"$1"')                  // Replace single quotes with double quotes for values
+            .replace(/,\s*}/g, '}')                              // Remove trailing commas in objects
+            .replace(/,\s*]/g, ']')                              // Remove trailing commas in arrays
+            .replace(/\n/g, ' ')                                 // Remove newlines
+            .replace(/\r/g, ' ')                                 // Remove carriage returns
+            .replace(/\t/g, ' ')                                 // Remove tabs
+            .replace(/\\"/g, '"')                                // Fix escaped quotes
+            .replace(/"\s*:\s*"/g, '":"')                        // Normalize spacing in key-value pairs
+            .replace(/"\s*,\s*"/g, '","');                       // Normalize spacing in arrays
           
-          // Ensure we have the right structure
-          if (!Array.isArray(questions)) {
-            console.error('Parsed result is not an array, type:', typeof questions);
-            throw new Error('Not a valid array of questions');
-          }
-          
-          console.log(`Successfully parsed ${questions.length} questions as JSON array`);
-        } catch (initialParseError) {
-          console.error('Initial JSON parsing failed:', initialParseError.message);
-          
-          // FALLBACK: Try to extract just the content within square brackets and repair it
-          const bracketContentMatch = cleanedText.match(/\[(.*)\]/s);
-          if (bracketContentMatch && bracketContentMatch[1]) {
-            console.log('Attempting to parse bracketed content...');
-            // Try to fix incomplete or malformed JSON objects within the array
-            let fixedContent = '[' + bracketContentMatch[1]
-              .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Quote all property names
-              .replace(/:\s*'([^']*)'/g, ':"$1"')                  // Replace single quotes with double quotes
-              .replace(/:\s*"([^"]*)'/g, ':"$1"')                  // Fix mismatched quotes (open double, close single)
-              .replace(/:\s*'([^"]*)"/g, ':"$1"')                  // Fix mismatched quotes (open single, close double)
-              .replace(/,(\s*[}\]])/g, '$1')                       // Remove trailing commas
-              + ']';
-            
-            try {
-              questions = JSON.parse(fixedContent);
-              console.log(`Successfully parsed bracketed content with ${questions.length} questions`);
-            } catch (bracketFixError) {
-              console.error('Bracket content parsing failed:', bracketFixError.message);
-              throw bracketFixError; // Let the outer catch handle it with manual parsing
-            }
+          questions = JSON.parse(fixedJson);
+          if (Array.isArray(questions) && questions.length > 0) {
+            console.log(`Successfully parsed ${questions.length} questions with JSON repair`);
+            parsingSuccessful = true;
           } else {
-            throw initialParseError; // No bracketed content found, let the next fallback handle it
+            throw new Error('Repaired result is not a valid array of questions');
           }
-        }
-        
-      } catch (parseError) {
-        console.error('All automatic JSON parsing failed:', parseError.message);
-        console.log('Attempting character-by-character JSON repair...');
-        
-        // MANUAL PARSING FALLBACK: Extract and repair individual question objects
-        try {
-          // Look for patterns that resemble question objects
-          const objectMatches = cleanedText.match(/\{[^{}]*question[^{}]*options[^{}]*correctAnswer[^{}]*\}/g);
+        } catch (fixedParseError) {
+          parsingErrorDetails.push(`Fixed parse error: ${fixedParseError.message}`);
           
-          if (objectMatches && objectMatches.length > 0) {
-            console.log(`Found ${objectMatches.length} potential question objects, parsing individually...`);
+          // Strategy 3: Extract individual question objects
+          try {
+            console.log('Attempting to extract individual question objects...');
+            const objectPattern = /\{\s*"question"\s*:\s*"([^"]+)"\s*,\s*"options"\s*:\s*\[([\s\S]*?)\]\s*,\s*"correctAnswer"\s*:\s*"([A-D])"\s*\}/g;
+            const questionMatches = [...cleanedText.matchAll(objectPattern)];
             
+            if (questionMatches.length > 0) {
+              questions = questionMatches.map(match => {
+                const questionText = match[1];
+                const optionsText = match[2];
+                const correctAnswer = match[3];
+                
+                // Parse the options
+                const optionsPattern = /"([^"]+)"/g;
+                const options = [...optionsText.matchAll(optionsPattern)].map(m => m[1]);
+                
+                return {
+                  question: questionText,
+                  options: options.length > 0 ? options : ["A. Option A", "B. Option B", "C. Option C", "D. Option D"],
+                  correctAnswer: correctAnswer || "A"
+                };
+              });
+              
+              console.log(`Successfully extracted ${questions.length} questions using regex pattern matching`);
+              parsingSuccessful = true;
+            } else {
+              throw new Error('No question objects found with regex pattern');
+            }
+          } catch (regexError) {
+            parsingErrorDetails.push(`Regex extraction error: ${regexError.message}`);
+            
+            // Final fallback: Generate default questions
+            console.log('All parsing strategies failed. Generating default questions as fallback.');
             questions = [];
-            for (const objStr of objectMatches) {
-              try {
-                // Advanced JSON repair for individual objects
-                let fixedJson = objStr
-                  .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Ensure all keys are properly quoted
-                  .replace(/:\s*'([^']*)'/g, ':"$1"')                  // Replace single quotes with double quotes for string values
-                  .replace(/([^\\])"/g, '$1\\"')                       // Escape unescaped quotes within values
-                  .replace(/"\s*:\s*"/g, '":"')                        // Fix spacing in key-value pairs
-                  .replace(/"\s*,\s*"/g, '","')                        // Fix spacing in arrays
-                  .replace(/,\s*}/g, '}');                             // Remove trailing commas
-                
-                // Make sure it starts and ends properly
-                if (!fixedJson.startsWith('{')) fixedJson = '{' + fixedJson;
-                if (!fixedJson.endsWith('}')) fixedJson = fixedJson + '}';
-                
-                console.log('Repaired individual question object:', fixedJson);
-                
-                try {
-                  const qObj = JSON.parse(fixedJson);
-                  questions.push(qObj);
-                } catch (e) {
-                  console.log(`Failed to parse individual question even after repair: ${e.message}`);
-                }
-              } catch (e) {
-                console.log(`Error processing individual question: ${e.message}`);
-              }
+            for (let i = 0; i < actualNumberOfQuestions; i++) {
+              questions.push({
+                question: `Question ${i+1} about ${course.name}`,
+                options: [
+                  `A. Option A for question ${i+1}`,
+                  `B. Option B for question ${i+1}`,
+                  `C. Option C for question ${i+1}`,
+                  `D. Option D for question ${i+1}`
+                ],
+                correctAnswer: "A",
+                isDefaultQuestion: true
+              });
             }
-            
-            if (questions.length === 0) {
-              throw new Error('Failed to parse any individual questions');
-            }
-            
-            console.log(`Successfully parsed ${questions.length} individual questions`);
-          } else {
-            throw new Error('No question objects found in the text');
+            console.log(`Generated ${questions.length} default fallback questions`);
           }
-        } catch (manualParseError) {
-          console.error('Manual parsing failed:', manualParseError.message);
-          
-          // FINAL FALLBACK: Generate default questions when all parsing attempts fail
-          console.log('All parsing strategies failed. Generating default questions...');
-          
-          // Flag to indicate we're using default questions
-          let usingDefaultQuestions = true;
-
-          questions = [];
-          for (let i = 0; i < actualNumberOfQuestions; i++) {
-            questions.push({
-              question: `Question ${i+1} about ${course.name}`,
-              options: [
-                `A. Option A for question ${i+1}`,
-                `B. Option B for question ${i+1}`,
-                `C. Option C for question ${i+1}`,
-                `D. Option D for question ${i+1}`
-              ],
-              correctAnswer: "A", // Default to A
-              isDefaultQuestion: true // Flag to identify default questions
-            });
-          }
-          console.log('Generated default questions as last resort');
         }
       }
       
-      // Format and validate each question with extra safeguards
-      console.log('Formatting and validating questions...');
+      // Enhanced validation and formatting process
+      console.log(`Validating and formatting ${questions.length} questions...`);
       const formattedQuestions = [];
       
-      // Process each question individually to avoid failing the entire batch
-      if (Array.isArray(questions)) {
-        for (let i = 0; i < Math.min(questions.length, actualNumberOfQuestions); i++) {
-          try {
-            const q = questions[i];
-            
-            // Skip invalid questions
-            if (!q || typeof q !== 'object') {
-              console.warn(`Skipping invalid question at index ${i}:`, q);
-              continue;
-            }
-            
-            // Ensure question text exists
-            const questionText = q.question?.trim() || `Question ${i + 1}`;
-            
-            // Process options with defensive programming
-            let options = [];
-            if (Array.isArray(q.options) && q.options.length > 0) {
-              // Process existing options with enhanced cleaning
-              options = q.options
-                .filter(opt => opt && typeof opt === 'string')
-                .map(opt => {
-                  // First clean the option text to remove any existing letter prefixes
-                  let cleanedText = opt.trim();
-                  
-                  // Aggressive cleaning to remove all types of letter prefixes
-                  cleanedText = cleanedText
-                    // Remove double prefixes like "A. A:" or "D) D:"
-                    .replace(/^([A-Da-d])[.):]\s*\1[.):]\s*/g, '')
-                    // Remove various letter prefix formats
-                    .replace(/^[A-Da-d][.):]\s*/g, '')
-                    .replace(/^[A-Da-d]\.\s*/g, '')
-                    .replace(/^[A-Da-d]\)\s*/g, '')
-                    .replace(/^[A-Da-d][:]\s*/g, '')
-                    .replace(/^[A-Da-d]\s+/g, '')
-                    // Also handle lowercase variations
-                    .replace(/^[a-d][.):]\s*/g, '')
-                    .replace(/^[a-d]\.\s*/g, '')
-                    .replace(/^[a-d]\)\s*/g, '')
-                    .replace(/^[a-d][:]\s*/g, '')
-                    .replace(/^[a-d]\s+/g, '')
-                    .trim();
-                    
-                  return cleanedText;
-                });
-            }
-            
-            // Ensure we have exactly 4 options
-            while (options.length < 4) {
-              options.push(`Option ${String.fromCharCode(65 + options.length)}`);
-            }
-            options = options.slice(0, 4); // Limit to 4 options
-            
-            // Ensure each option starts with the correct letter prefix (A., B., etc.)
-            options = options.map((opt, idx) => {
-              const prefix = String.fromCharCode(65 + idx) + '. ';
-              // At this point options should be clean of prefixes already, so just add the prefix
-              return prefix + opt;
-            });
-            
-            // Process correctAnswer with multiple fallback strategies
-            let correctAnswer = null;
-            
-            if (q.correctAnswer) {
-              // Parse and normalize the correctAnswer
-              let parsedAnswer = q.correctAnswer.toString().trim().toUpperCase();
-              
-              // Handle various formats (A, A., A:, "A", etc.)
-              if (parsedAnswer.match(/^["']?([A-D])["']?[.):]?$/)) {
-                parsedAnswer = parsedAnswer.match(/([A-D])/)[1];
-              }
-              
-              // Validate that it's a single letter from A-D
-              if (/^[A-D]$/.test(parsedAnswer)) {
-                correctAnswer = parsedAnswer;
-              }
-            }
-            
-            // If no valid correctAnswer, use deterministic selection based on index
-            if (!correctAnswer) {
-              // Use a deterministic selection to distribute answers
-              const possibleAnswers = ['A', 'B', 'C', 'D'];
-              const answerIndex = i % 4; // Simple rotation
-              correctAnswer = possibleAnswers[answerIndex];
-              console.warn(`Assigned deterministic answer ${correctAnswer} for question: "${questionText.substring(0, 30)}..."`);
-            }
-            
-            // Add the processed question to our results
-            formattedQuestions.push({
-              id: i + 1,
-              question: questionText,
-              options: options,
-              correctAnswer: correctAnswer,
-              timePerQuestion: Number(timePerQuestion) || 30
-            });
-            
-            console.log(`Successfully processed question ${i + 1}`);
-          } catch (formatError) {
-            console.error(`Error formatting question ${i + 1}:`, formatError.message);
-            // Continue processing other questions
+      // Process each question with improved validation
+      for (let i = 0; i < Math.min(questions.length, actualNumberOfQuestions); i++) {
+        try {
+          const q = questions[i];
+          
+          // Skip invalid questions
+          if (!q || typeof q !== 'object') {
+            console.warn(`Skipping invalid question at index ${i}`);
+            continue;
           }
-        }
-      }
-      
-      // Ensure we have EXACTLY the requested number of questions
-      if (formattedQuestions.length < actualNumberOfQuestions) {
-        console.log(`Only ${formattedQuestions.length} valid questions were processed, generating ${actualNumberOfQuestions - formattedQuestions.length} more to meet the target count of ${actualNumberOfQuestions}`);
-        
-        const remainingCount = actualNumberOfQuestions - formattedQuestions.length;
-        for (let i = 0; i < remainingCount; i++) {
-          const questionIndex = formattedQuestions.length + i + 1;
+          
+          // Ensure question text exists
+          const questionText = q.question?.trim() || `Question ${i + 1} about ${course.name}`;
+          
+          // Process options with enhanced validation
+          let options = [];
+          if (Array.isArray(q.options) && q.options.length > 0) {
+            // Clean and format each option
+            options = q.options
+              .filter(opt => opt != null)
+              .map((opt, idx) => {
+                // Handle different formats of options (string or object)
+                let optText = '';
+                if (typeof opt === 'string') {
+                  optText = opt.trim();
+                } else if (opt !== null && typeof opt === 'object') {
+                  optText = (opt.text || '').trim();
+                }
+                
+                // Remove any existing prefixes (A., B:, etc)
+                optText = optText
+                  .replace(/^[A-Da-d][.):]\s*/g, '')
+                  .replace(/^[A-Da-d]\s+/g, '')
+                  .trim();
+                
+                // Add consistent prefix
+                return `${String.fromCharCode(65 + idx)}. ${optText || `Option ${String.fromCharCode(65 + idx)}`}`;
+              });
+          }
+          
+          // Ensure we have exactly 4 options
+          while (options.length < 4) {
+            options.push(`${String.fromCharCode(65 + options.length)}. Option ${String.fromCharCode(65 + options.length)}`);
+          }
+          options = options.slice(0, 4); // Limit to 4 options
+          
+          // Validate correctAnswer
+          let correctAnswer = null;
+          
+          if (q.correctAnswer) {
+            // Extract and normalize the correctAnswer
+            let parsedAnswer = q.correctAnswer.toString().trim().toUpperCase();
+            
+            // Handle various formats and extract just the letter
+            if (/[A-D]/.test(parsedAnswer)) {
+              correctAnswer = parsedAnswer.match(/[A-D]/)[0];
+            }
+          }
+          
+          // Fallback if no valid correctAnswer
+          if (!correctAnswer) {
+            correctAnswer = String.fromCharCode(65 + (i % 4)); // A, B, C, D in sequence
+          }
+          
+          // Add the processed question to our results
           formattedQuestions.push({
-            id: questionIndex,
-            question: `Question ${questionIndex} about ${course.name}`,
-            options: [
-              `A. Option A for question ${questionIndex}`,
-              `B. Option B for question ${questionIndex}`,
-              `C. Option C for question ${questionIndex}`,
-              `D. Option D for question ${questionIndex}`
-            ],
-            correctAnswer: "A", // Default to A
+            id: i + 1,
+            question: questionText,
+            options: options,
+            correctAnswer: correctAnswer,
             timePerQuestion: Number(timePerQuestion) || 30
           });
+        } catch (formatError) {
+          console.error(`Error formatting question ${i + 1}:`, formatError);
+          // Continue with next question
         }
       }
       
-      // If we somehow got more questions than requested (shouldn't happen), trim the excess
-      if (formattedQuestions.length > actualNumberOfQuestions) {
-        console.log(`Trimming excess questions: ${formattedQuestions.length} generated but only ${actualNumberOfQuestions} requested`);
-        formattedQuestions.length = actualNumberOfQuestions;
+      // Fill up to requested count if needed
+      while (formattedQuestions.length < actualNumberOfQuestions) {
+        const idx = formattedQuestions.length;
+        formattedQuestions.push({
+          id: idx + 1,
+          question: `Question ${idx + 1} about ${course.name}`,
+          options: [
+            `A. Option A for question ${idx + 1}`,
+            `B. Option B for question ${idx + 1}`,
+            `C. Option C for question ${idx + 1}`,
+            `D. Option D for question ${idx + 1}`
+          ],
+          correctAnswer: "A",
+          timePerQuestion: Number(timePerQuestion) || 30,
+          isDefaultQuestion: true
+        });
       }
       
-      // Final verification of question count
-      console.log(`Final formatted question count: ${formattedQuestions.length} (requested: ${actualNumberOfQuestions})`);
-      
-      // Check if we're returning default questions
-      const allDefaultQuestions = formattedQuestions.every(q => q.isDefaultQuestion === true);
-      if (allDefaultQuestions) {
-        console.warn('WARNING: Returning all default questions due to parsing failure');
+      // Check if we're using all default questions
+      const usingAllDefaultQuestions = formattedQuestions.every(q => q.isDefaultQuestion === true);
+      if (usingAllDefaultQuestions && !parsingSuccessful) {
+        console.warn('WARNING: Returning all default questions due to parsing failures');
         return res.status(422).json({
           message: 'Failed to generate meaningful quiz questions',
           error: 'Quiz generation produced only generic questions. Please try again.',
           isDefaultQuestions: true,
+          parsingErrors: parsingErrorDetails,
           questions: formattedQuestions
         });
       }
-
-      // Remove the isDefaultQuestion flag before sending to client
-      formattedQuestions.forEach(q => delete q.isDefaultQuestion);
-
-      // Perform final validation and return results
-      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with exactly ${formattedQuestions.length} questions`);
-      return res.json(formattedQuestions);
       
+      // Remove the isDefaultQuestion flag from each question
+      formattedQuestions.forEach(q => delete q.isDefaultQuestion);
+      
+      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with ${formattedQuestions.length} questions`);
+      return res.json(formattedQuestions);
     } catch (error) {
-      console.error('Quiz Generation Error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          message: 'Failed to generate quiz',
-          error: error.message || 'An unexpected error occurred during quiz generation'
-        });
-      }
+      console.error('Quiz generation API error:', error);
+      return res.status(500).json({
+        message: 'Failed to generate quiz questions',
+        error: error.message
+      });
     }
-  } catch (error) {
-    console.error('Quiz generation error:', error);
+  } catch (mainError) {
+    console.error('Quiz Generation Endpoint Error:', mainError);
     if (!res.headersSent) {
-      res.status(500).json({
-        message: 'Error generating quiz',
-        error: error.message || 'An unexpected error occurred'
+      return res.status(500).json({
+        message: 'Internal server error during quiz generation',
+        error: mainError.message
       });
     }
   }
