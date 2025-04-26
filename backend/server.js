@@ -564,7 +564,8 @@ app.post('/api/quiz/generate', async (req, res) => {
   try {
     const { courseId, numberOfQuestions, difficulty, timePerQuestion } = req.body;
     
-    const actualNumberOfQuestions = Math.min(Number(numberOfQuestions) || 5, 10);
+    // Increased maximum from 10 to 20 questions
+    const actualNumberOfQuestions = Math.min(Number(numberOfQuestions) || 5, 20);
     
     if (!courseId || !actualNumberOfQuestions || !difficulty) {
       return res.status(400).json({ 
