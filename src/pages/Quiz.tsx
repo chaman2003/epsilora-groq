@@ -647,6 +647,24 @@ useEffect(() => {
   }
 }, [quizStarted, questions]);
 
+// Add effect to check questions as soon as they're loaded
+useEffect(() => {
+  if (quizStarted && questions && questions.length > 0 && selectedCourse) {
+    // Find the course name for detection
+    const courseName = courses.find(c => c._id === selectedCourse)?.name || '';
+    
+    // Check if any question in the quiz is a default question
+    const hasDefaultQuestions = questions.some(q => isDefaultQuestion(q, courseName));
+    
+    if (hasDefaultQuestions) {
+      console.warn("Default questions detected after loading - stopping quiz");
+      setQuizStarted(false);
+      setDefaultQuestionsError(true);
+      setLoading(false);
+    }
+  }
+}, [quizStarted, questions, selectedCourse, courses]);
+
 // Update the generateQuiz function to respect the user's selection for the number of questions
 const generateQuiz = async () => {
   if (!selectedCourse) {
@@ -2358,25 +2376,6 @@ if (currentQuestion >= questions?.length && questions?.length > 0) {
       <QuizGenerationOverlay loading={isLoading} />
     );
   };
-  
-  // Add at the end of the component, right before the return statement:
-  // Add an effect to check questions as soon as they're loaded
-  useEffect(() => {
-    if (quizStarted && questions && questions.length > 0 && selectedCourse) {
-      // Find the course name for detection
-      const courseName = courses.find(c => c._id === selectedCourse)?.name || '';
-      
-      // Check if any question in the quiz is a default question
-      const hasDefaultQuestions = questions.some(q => isDefaultQuestion(q, courseName));
-      
-      if (hasDefaultQuestions) {
-        console.warn("Default questions detected after loading - stopping quiz");
-        setQuizStarted(false);
-        setDefaultQuestionsError(true);
-        setLoading(false);
-      }
-    }
-  }, [quizStarted, questions, selectedCourse, courses]);
   
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-16">
