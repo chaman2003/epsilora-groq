@@ -27,19 +27,6 @@ const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const MONGODB_URI = process.env.MONGODB_URI;
 
-// Log environment check on startup (without exposing sensitive values)
-console.log('Environment check:', {
-  GROQ_API_KEY: GROQ_API_KEY ? 'Set' : 'Not set',
-  JWT_SECRET: JWT_SECRET ? 'Set' : 'Not set',
-  MONGODB_URI: MONGODB_URI ? 'Set' : 'Not set',
-  NODE_ENV: process.env.NODE_ENV
-});
-
-// Validate critical environment variables
-if (!GROQ_API_KEY && process.env.NODE_ENV === 'production') {
-  console.error('WARNING: GROQ_API_KEY environment variable is not set. Quiz generation will not work!');
-}
-
 const app = express();
 
 // CORS configuration
@@ -162,116 +149,32 @@ const connectToMongoDB = async () => {
 // Function to call Groq API
 const callGroqAPI = async (prompt, temperature = 0.7, maxTokens = 2048) => {
   try {
-    console.log('Calling Groq API with prompt length:', prompt.length);
-    console.log('Prompt sample:', prompt.substring(0, 100) + '...');
+    console.log('Calling Groq API with prompt:', prompt.substring(0, 100) + '...');
     
-    // Add retry logic for Groq API call
-    let retries = 0;
-    const maxRetries = 3;
-    let lastError = null;
-    
-    while (retries < maxRetries) {
-      try {
-        // Add timeout to prevent hanging requests
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-        
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${GROQ_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: 'gemma2-9b-it',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: temperature,
-            max_tokens: maxTokens,
-            response_format: { type: "text" } // Explicitly request text format
-          }),
-          signal: controller.signal
-        });
-        
-        // Clear the timeout
-        clearTimeout(timeoutId);
-        
-        // Handle non-200 responses
-        if (!response.ok) {
-          const statusCode = response.status;
-          let errorBody = '';
-          
-          try {
-            errorBody = await response.text();
-            console.error(`Groq API error (${statusCode}):`, errorBody);
-          } catch (readError) {
-            console.error(`Could not read error response body: ${readError.message}`);
-          }
-          
-          // Check if we should retry based on status code
-          if (statusCode === 429 || statusCode >= 500) {
-            throw new Error(`Groq API error (${statusCode}): ${errorBody || response.statusText}. Retrying...`);
-          } else {
-            // For 4xx errors (except 429), don't retry
-            throw new Error(`Groq API error (${statusCode}): ${errorBody || response.statusText}`);
-          }
-        }
-        
-        // Parse the JSON response
-        const data = await response.json();
-        
-        // Validate the response structure
-        if (!data || !data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
-          console.error('Invalid response structure from Groq API:', JSON.stringify(data).substring(0, 200));
-          throw new Error('Invalid response structure from Groq API');
-        }
-        
-        const result = data.choices[0].message.content;
-        
-        // Basic validation of result
-        if (!result || result.trim().length === 0) {
-          throw new Error('Empty response from Groq API');
-        }
-        
-        // Return successful result
-        return result;
-        
-      } catch (error) {
-        lastError = error;
-        
-        // Don't retry aborted requests or client errors (except rate limits)
-        if (error.name === 'AbortError') {
-          console.error('Groq API request timed out');
-          throw new Error('Groq API request timed out after 30 seconds');
-        }
-        
-        // If this is our last retry, throw the error
-        if (retries === maxRetries - 1) {
-          console.error(`Final Groq API attempt failed after ${maxRetries} retries:`, error);
-          throw error;
-        }
-        
-        // Otherwise, wait and retry
-        const delay = Math.pow(2, retries) * 1000; // Exponential backoff
-        console.log(`Retrying Groq API call in ${delay}ms... (Attempt ${retries + 1} of ${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        retries++;
-      }
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gemma2-9b-it',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: temperature,
+        max_tokens: maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Groq API error: ${errorData.error?.message || response.statusText}`);
     }
-    
-    // Should never reach here due to throw in the loop
-    throw lastError || new Error('Unknown error in Groq API call');
+
+    const data = await response.json();
+    return data.choices[0].message.content;
   } catch (error) {
     console.error('Error calling Groq API:', error);
-    
-    // Return a structured error that's easier to handle upstream
-    const errorObj = {
-      error: true,
-      message: error.message || 'Unknown error calling Groq API',
-      timestamp: new Date().toISOString()
-    };
-    
-    // Throw a structured error
-    throw new Error(JSON.stringify(errorObj));
+    throw error;
   }
 };
 
@@ -704,181 +607,253 @@ app.post('/api/quiz/generate', async (req, res) => {
 
     console.log(`Generating ${actualNumberOfQuestions} questions at ${difficulty} difficulty for course: ${course.name}`);
     
-    let generatedText;
-    
     try {
-      // Try to call Groq API with a timeout wrapper to prevent hanging requests
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Timeout calling Groq API')), 60000);
-      });
-      
-      const apiPromise = callGroqAPI(promptText, 0.3, 2048);
-      
-      // Use Promise.race to implement a timeout
-      generatedText = await Promise.race([apiPromise, timeoutPromise]);
-      
+      // Call Groq API instead of Gemini
+      const generatedText = await callGroqAPI(promptText, 0.3, 2048);
+
       if (!generatedText) {
         throw new Error('No content generated from the API');
       }
-    
-    } catch (apiError) {
-      console.error('Failed to get response from Groq API:', apiError);
-      
-      // Check if this is a structured error from callGroqAPI
-      let errorDetails = 'API unavailable';
-      try {
-        const errorObj = JSON.parse(apiError.message);
-        if (errorObj && errorObj.error) {
-          errorDetails = errorObj.message;
-        }
-      } catch (e) {
-        // Not a JSON string, use the error message as is
-        errorDetails = apiError.message;
-      }
-      
-      // FALLBACK: Generate simple questions without using the API
-      console.log('Using fallback question generation due to API error');
-      
-      // Generate more relevant fallback questions
-      const fallbackQuestions = generateFallbackQuestions(
-        course.name, 
-        difficulty, 
-        actualNumberOfQuestions,
-        timePerQuestion
-      );
-      
-      console.log(`Generated ${fallbackQuestions.length} fallback questions due to API error: ${errorDetails}`);
-      
-      // Return the fallback questions
-      return res.json(fallbackQuestions);
-    }
 
-    // Log the full response for debugging during development
-    console.log('Raw Groq API response:', generatedText);
+      // Log the full response for debugging during development
+      console.log('Raw Groq API response:', generatedText);
 
-    // Super enhanced cleaning and parsing with multiple fallback strategies
-    let cleanedText = generatedText
-      .replace(/```(json|javascript|js)?/g, '') // Remove code block markers with various language indicators
-      .replace(/```/g, '')                      // Remove any remaining code block markers
-      .replace(/[\n\r\t]/g, ' ')                // Replace newlines and tabs with spaces
-      .trim();                                  // Trim whitespace
-    
-    console.log('Cleaned text:', cleanedText);
-    
-    // Handle JSON parsing errors with multiple advanced fallback strategies
-    let questions;
-    try {
-      // Strategy 1: Find the most complete JSON array pattern
-      const jsonArrayMatch = cleanedText.match(/(\[\s*\{.*\}\s*\])/s);
-      if (jsonArrayMatch && jsonArrayMatch[1]) {
-        console.log('Found JSON array pattern, extracting...');
-        cleanedText = jsonArrayMatch[1];
-        
-        // Additional repair of common JSON issues
-        cleanedText = cleanedText
-          .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Ensure property names are quoted
-          .replace(/,\s*}/g, '}')                               // Remove trailing commas in objects
-          .replace(/,\s*]/g, ']');                              // Remove trailing commas in arrays
-      }
+      // Super enhanced cleaning and parsing with multiple fallback strategies
+      let cleanedText = generatedText
+        .replace(/```(json|javascript|js)?/g, '') // Remove code block markers with various language indicators
+        .replace(/```/g, '')                      // Remove any remaining code block markers
+        .replace(/[\n\r\t]/g, ' ')                // Replace newlines and tabs with spaces
+        .trim();                                  // Trim whitespace
       
-      // Try to parse the JSON
-      console.log('Attempting to parse JSON...');
+      console.log('Cleaned text:', cleanedText);
+      
+      // Handle JSON parsing errors with multiple advanced fallback strategies
+      let questions;
       try {
-        questions = JSON.parse(cleanedText);
-        
-        // Ensure we have the right structure
-        if (!Array.isArray(questions)) {
-          console.error('Parsed result is not an array, type:', typeof questions);
-          throw new Error('Not a valid array of questions');
-        }
-        
-        console.log(`Successfully parsed ${questions.length} questions as JSON array`);
-      } catch (initialParseError) {
-        console.error('Initial JSON parsing failed:', initialParseError.message);
-        
-        // FALLBACK: Try to extract just the content within square brackets and repair it
-        const bracketContentMatch = cleanedText.match(/\[(.*)\]/s);
-        if (bracketContentMatch && bracketContentMatch[1]) {
-          console.log('Attempting to parse bracketed content...');
-          // Try to fix incomplete or malformed JSON objects within the array
-          let fixedContent = '[' + bracketContentMatch[1]
-            .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Quote all property names
-            .replace(/:\s*'([^']*)'/g, ':"$1"')                  // Replace single quotes with double quotes
-            .replace(/:\s*"([^"]*)'/g, ':"$1"')                  // Fix mismatched quotes (open double, close single)
-            .replace(/:\s*'([^"]*)"/g, ':"$1"')                  // Fix mismatched quotes (open single, close double)
-            .replace(/,(\s*[}\]])/g, '$1')                       // Remove trailing commas
-            + ']';
+        // Strategy 1: Find the most complete JSON array pattern
+        const jsonArrayMatch = cleanedText.match(/(\[\s*\{.*\}\s*\])/s);
+        if (jsonArrayMatch && jsonArrayMatch[1]) {
+          console.log('Found JSON array pattern, extracting...');
+          cleanedText = jsonArrayMatch[1];
           
-          try {
-            questions = JSON.parse(fixedContent);
-            console.log(`Successfully parsed bracketed content with ${questions.length} questions`);
-          } catch (bracketFixError) {
-            console.error('Bracket content parsing failed:', bracketFixError.message);
-            throw bracketFixError; // Let the outer catch handle it with manual parsing
-          }
-        } else {
-          throw initialParseError; // No bracketed content found, let the next fallback handle it
+          // Additional repair of common JSON issues
+          cleanedText = cleanedText
+            .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Ensure property names are quoted
+            .replace(/,\s*}/g, '}')                               // Remove trailing commas in objects
+            .replace(/,\s*]/g, ']');                              // Remove trailing commas in arrays
         }
-      }
-      
-    } catch (parseError) {
-      console.error('All automatic JSON parsing failed:', parseError.message);
-      console.log('Attempting character-by-character JSON repair...');
-      
-      // MANUAL PARSING FALLBACK: Extract and repair individual question objects
-      try {
-        // Look for patterns that resemble question objects
-        const objectMatches = cleanedText.match(/\{[^{}]*question[^{}]*options[^{}]*correctAnswer[^{}]*\}/g);
         
-        if (objectMatches && objectMatches.length > 0) {
-          console.log(`Found ${objectMatches.length} potential question objects, parsing individually...`);
+        // Try to parse the JSON
+        console.log('Attempting to parse JSON...');
+        try {
+          questions = JSON.parse(cleanedText);
+          
+          // Ensure we have the right structure
+          if (!Array.isArray(questions)) {
+            console.error('Parsed result is not an array, type:', typeof questions);
+            throw new Error('Not a valid array of questions');
+          }
+          
+          console.log(`Successfully parsed ${questions.length} questions as JSON array`);
+        } catch (initialParseError) {
+          console.error('Initial JSON parsing failed:', initialParseError.message);
+          
+          // FALLBACK: Try to extract just the content within square brackets and repair it
+          const bracketContentMatch = cleanedText.match(/\[(.*)\]/s);
+          if (bracketContentMatch && bracketContentMatch[1]) {
+            console.log('Attempting to parse bracketed content...');
+            // Try to fix incomplete or malformed JSON objects within the array
+            let fixedContent = '[' + bracketContentMatch[1]
+              .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Quote all property names
+              .replace(/:\s*'([^']*)'/g, ':"$1"')                  // Replace single quotes with double quotes
+              .replace(/:\s*"([^"]*)'/g, ':"$1"')                  // Fix mismatched quotes (open double, close single)
+              .replace(/:\s*'([^"]*)"/g, ':"$1"')                  // Fix mismatched quotes (open single, close double)
+              .replace(/,(\s*[}\]])/g, '$1')                       // Remove trailing commas
+              + ']';
+            
+            try {
+              questions = JSON.parse(fixedContent);
+              console.log(`Successfully parsed bracketed content with ${questions.length} questions`);
+            } catch (bracketFixError) {
+              console.error('Bracket content parsing failed:', bracketFixError.message);
+              throw bracketFixError; // Let the outer catch handle it with manual parsing
+            }
+          } else {
+            throw initialParseError; // No bracketed content found, let the next fallback handle it
+          }
+        }
+        
+      } catch (parseError) {
+        console.error('All automatic JSON parsing failed:', parseError.message);
+        console.log('Attempting character-by-character JSON repair...');
+        
+        // MANUAL PARSING FALLBACK: Extract and repair individual question objects
+        try {
+          // Look for patterns that resemble question objects
+          const objectMatches = cleanedText.match(/\{[^{}]*question[^{}]*options[^{}]*correctAnswer[^{}]*\}/g);
+          
+          if (objectMatches && objectMatches.length > 0) {
+            console.log(`Found ${objectMatches.length} potential question objects, parsing individually...`);
+            
+            questions = [];
+            for (const objStr of objectMatches) {
+              try {
+                // Advanced JSON repair for individual objects
+                let fixedJson = objStr
+                  .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Ensure all keys are properly quoted
+                  .replace(/:\s*'([^']*)'/g, ':"$1"')                  // Replace single quotes with double quotes for string values
+                  .replace(/([^\\])"/g, '$1\\"')                       // Escape unescaped quotes within values
+                  .replace(/"\s*:\s*"/g, '":"')                        // Fix spacing in key-value pairs
+                  .replace(/"\s*,\s*"/g, '","')                        // Fix spacing in arrays
+                  .replace(/,\s*}/g, '}');                             // Remove trailing commas
+                
+                // Make sure it starts and ends properly
+                if (!fixedJson.startsWith('{')) fixedJson = '{' + fixedJson;
+                if (!fixedJson.endsWith('}')) fixedJson = fixedJson + '}';
+                
+                console.log('Repaired individual question object:', fixedJson);
+                
+                try {
+                  const qObj = JSON.parse(fixedJson);
+                  questions.push(qObj);
+                } catch (e) {
+                  console.log(`Failed to parse individual question even after repair: ${e.message}`);
+                }
+              } catch (e) {
+                console.log(`Error processing individual question: ${e.message}`);
+              }
+            }
+            
+            if (questions.length === 0) {
+              throw new Error('Failed to parse any individual questions');
+            }
+            
+            console.log(`Successfully parsed ${questions.length} individual questions`);
+          } else {
+            throw new Error('No question objects found in the text');
+          }
+        } catch (manualParseError) {
+          console.error('Manual parsing failed:', manualParseError.message);
+          
+          // FINAL FALLBACK: Generate default questions when all parsing attempts fail
+          console.log('All parsing strategies failed. Generating default questions...');
           
           questions = [];
-          for (const objStr of objectMatches) {
-            try {
-              // Advanced JSON repair for individual objects
-              let fixedJson = objStr
-                .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Ensure all keys are properly quoted
-                .replace(/:\s*'([^']*)'/g, ':"$1"')                  // Replace single quotes with double quotes for string values
-                .replace(/([^\\])"/g, '$1\\"')                       // Escape unescaped quotes within values
-                .replace(/"\s*:\s*"/g, '":"')                        // Fix spacing in key-value pairs
-                .replace(/"\s*,\s*"/g, '","')                        // Fix spacing in arrays
-                .replace(/,\s*}/g, '}');                             // Remove trailing commas
-              
-              // Make sure it starts and ends properly
-              if (!fixedJson.startsWith('{')) fixedJson = '{' + fixedJson;
-              if (!fixedJson.endsWith('}')) fixedJson = fixedJson + '}';
-              
-              console.log('Repaired individual question object:', fixedJson);
-              
-              try {
-                const qObj = JSON.parse(fixedJson);
-                questions.push(qObj);
-              } catch (e) {
-                console.log(`Failed to parse individual question even after repair: ${e.message}`);
-              }
-            } catch (e) {
-              console.log(`Error processing individual question: ${e.message}`);
-            }
+          for (let i = 0; i < actualNumberOfQuestions; i++) {
+            questions.push({
+              question: `Question ${i+1} about ${course.name}`,
+              options: [
+                `A. Option A for question ${i+1}`,
+                `B. Option B for question ${i+1}`,
+                `C. Option C for question ${i+1}`,
+                `D. Option D for question ${i+1}`
+              ],
+              correctAnswer: "A" // Default to A
+            });
           }
-          
-          if (questions.length === 0) {
-            throw new Error('Failed to parse any individual questions');
-          }
-          
-          console.log(`Successfully parsed ${questions.length} individual questions`);
-        } else {
-          throw new Error('No question objects found in the text');
+          console.log('Generated default questions as last resort');
         }
-      } catch (manualParseError) {
-        console.error('Manual parsing failed:', manualParseError.message);
+      }
+      
+      // Format and validate each question with extra safeguards
+      console.log('Formatting and validating questions...');
+      const formattedQuestions = [];
+      
+      // Process each question individually to avoid failing the entire batch
+      if (Array.isArray(questions)) {
+        for (let i = 0; i < Math.min(questions.length, actualNumberOfQuestions); i++) {
+          try {
+            const q = questions[i];
+            
+            // Skip invalid questions
+            if (!q || typeof q !== 'object') {
+              console.warn(`Skipping invalid question at index ${i}:`, q);
+              continue;
+            }
+            
+            // Ensure question text exists
+            const questionText = q.question?.trim() || `Question ${i + 1}`;
+            
+            // Process options with defensive programming
+            let options = [];
+            if (Array.isArray(q.options) && q.options.length > 0) {
+              // Process existing options
+              options = q.options
+                .filter(opt => opt && typeof opt === 'string')
+                .map(opt => opt.trim());
+            }
+            
+            // Ensure we have exactly 4 options
+            while (options.length < 4) {
+              options.push(`Option ${String.fromCharCode(65 + options.length)}`);
+            }
+            options = options.slice(0, 4); // Limit to 4 options
+            
+            // Ensure each option starts with the correct letter prefix (A., B., etc.)
+            options = options.map((opt, idx) => {
+              const prefix = String.fromCharCode(65 + idx) + '. ';
+              if (opt.startsWith(prefix) || opt.startsWith(String.fromCharCode(65 + idx) + '.')) {
+                return opt;
+              } else if (opt.match(/^[A-D][\.\)]\s/)) {
+                // Option already has a letter prefix but might be in a different format
+                return prefix + opt.replace(/^[A-D][\.\)]\s/, '');
+              } else {
+                return prefix + opt;
+              }
+            });
+            
+            // Process correctAnswer with multiple fallback strategies
+            let correctAnswer = null;
+            
+            if (q.correctAnswer) {
+              // Parse and normalize the correctAnswer
+              let parsedAnswer = q.correctAnswer.toString().trim().toUpperCase();
+              
+              // Handle various formats (A, A., A:, "A", etc.)
+              if (parsedAnswer.match(/^["']?([A-D])["']?[.):]?$/)) {
+                parsedAnswer = parsedAnswer.match(/([A-D])/)[1];
+              }
+              
+              // Validate that it's a single letter from A-D
+              if (/^[A-D]$/.test(parsedAnswer)) {
+                correctAnswer = parsedAnswer;
+              }
+            }
+            
+            // If no valid correctAnswer, use deterministic selection based on index
+            if (!correctAnswer) {
+              // Use a deterministic selection to distribute answers
+              const possibleAnswers = ['A', 'B', 'C', 'D'];
+              const answerIndex = i % 4; // Simple rotation
+              correctAnswer = possibleAnswers[answerIndex];
+              console.warn(`Assigned deterministic answer ${correctAnswer} for question: "${questionText.substring(0, 30)}..."`);
+            }
+            
+            // Add the processed question to our results
+            formattedQuestions.push({
+              id: i + 1,
+              question: questionText,
+              options: options,
+              correctAnswer: correctAnswer,
+              timePerQuestion: Number(timePerQuestion) || 30
+            });
+            
+            console.log(`Successfully processed question ${i + 1}`);
+          } catch (formatError) {
+            console.error(`Error formatting question ${i + 1}:`, formatError.message);
+            // Continue processing other questions
+          }
+        }
+      }
+      
+      // Ensure we have at least one question
+      if (formattedQuestions.length === 0) {
+        console.error('No valid questions could be formatted');
         
-        // FINAL FALLBACK: Generate default questions when all parsing attempts fail
-        console.log('All parsing strategies failed. Generating default questions...');
-        
-        questions = [];
+        // Return default questions as absolute last resort
         for (let i = 0; i < actualNumberOfQuestions; i++) {
-          questions.push({
+          formattedQuestions.push({
+            id: i + 1,
             question: `Question ${i+1} about ${course.name}`,
             options: [
               `A. Option A for question ${i+1}`,
@@ -886,146 +861,33 @@ app.post('/api/quiz/generate', async (req, res) => {
               `C. Option C for question ${i+1}`,
               `D. Option D for question ${i+1}`
             ],
-            correctAnswer: "A" // Default to A
-          });
-        }
-        console.log('Generated default questions as last resort');
-      }
-    }
-
-    // Format and validate each question with extra safeguards
-    console.log('Formatting and validating questions...');
-    const formattedQuestions = [];
-    
-    // Process each question individually to avoid failing the entire batch
-    if (Array.isArray(questions)) {
-      for (let i = 0; i < Math.min(questions.length, actualNumberOfQuestions); i++) {
-        try {
-          const q = questions[i];
-          
-          // Skip invalid questions
-          if (!q || typeof q !== 'object') {
-            console.warn(`Skipping invalid question at index ${i}:`, q);
-            continue;
-          }
-          
-          // Ensure question text exists
-          const questionText = q.question?.trim() || `Question ${i + 1}`;
-          
-          // Process options with defensive programming
-          let options = [];
-          if (Array.isArray(q.options) && q.options.length > 0) {
-            // Process existing options
-            options = q.options
-              .filter(opt => opt && typeof opt === 'string')
-              .map(opt => opt.trim());
-          }
-          
-          // Ensure we have exactly 4 options
-          while (options.length < 4) {
-            options.push(`Option ${String.fromCharCode(65 + options.length)}`);
-          }
-          options = options.slice(0, 4); // Limit to 4 options
-          
-          // Ensure each option starts with the correct letter prefix (A., B., etc.)
-          options = options.map((opt, idx) => {
-            const prefix = String.fromCharCode(65 + idx) + '. ';
-            if (opt.startsWith(prefix) || opt.startsWith(String.fromCharCode(65 + idx) + '.')) {
-              return opt;
-            } else if (opt.match(/^[A-D][\.\)]\s/)) {
-              // Option already has a letter prefix but might be in a different format
-              return prefix + opt.replace(/^[A-D][\.\)]\s/, '');
-            } else {
-              return prefix + opt;
-            }
-          });
-          
-          // Process correctAnswer with multiple fallback strategies
-          let correctAnswer = null;
-          
-          if (q.correctAnswer) {
-            // Parse and normalize the correctAnswer
-            let parsedAnswer = q.correctAnswer.toString().trim().toUpperCase();
-            
-            // Handle various formats (A, A., A:, "A", etc.)
-            if (parsedAnswer.match(/^["']?([A-D])["']?[.):]?$/)) {
-              parsedAnswer = parsedAnswer.match(/([A-D])/)[1];
-            }
-            
-            // Validate that it's a single letter from A-D
-            if (/^[A-D]$/.test(parsedAnswer)) {
-              correctAnswer = parsedAnswer;
-            }
-          }
-          
-          // If no valid correctAnswer, use deterministic selection based on index
-          if (!correctAnswer) {
-            // Use a deterministic selection to distribute answers
-            const possibleAnswers = ['A', 'B', 'C', 'D'];
-            const answerIndex = i % 4; // Simple rotation
-            correctAnswer = possibleAnswers[answerIndex];
-            console.warn(`Assigned deterministic answer ${correctAnswer} for question: "${questionText.substring(0, 30)}..."`);
-          }
-          
-          // Add the processed question to our results
-          formattedQuestions.push({
-            id: i + 1,
-            question: questionText,
-            options: options,
-            correctAnswer: correctAnswer,
+            correctAnswer: "A", // Default to A
             timePerQuestion: Number(timePerQuestion) || 30
           });
-          
-          console.log(`Successfully processed question ${i + 1}`);
-        } catch (formatError) {
-          console.error(`Error formatting question ${i + 1}:`, formatError.message);
-          // Continue processing other questions
         }
+        console.log('Added default questions due to formatting failures');
       }
-    }
-    
-    // Ensure we have at least one question
-    if (formattedQuestions.length === 0) {
-      console.error('No valid questions could be formatted');
+
+      // Perform final validation and return results
+      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with ${formattedQuestions.length} questions`);
+      return res.json(formattedQuestions);
       
-      // Return default questions as absolute last resort
-      for (let i = 0; i < actualNumberOfQuestions; i++) {
-        formattedQuestions.push({
-          id: i + 1,
-          question: `Question ${i+1} about ${course.name}`,
-          options: [
-            `A. Option A for question ${i+1}`,
-            `B. Option B for question ${i+1}`,
-            `C. Option C for question ${i+1}`,
-            `D. Option D for question ${i+1}`
-          ],
-          correctAnswer: "A", // Default to A
-          timePerQuestion: Number(timePerQuestion) || 30
+    } catch (error) {
+      console.error('Quiz Generation Error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          message: 'Failed to generate quiz',
+          error: error.message || 'An unexpected error occurred during quiz generation'
         });
       }
-      console.log('Added default questions due to formatting failures');
     }
-
-    // Perform final validation and return results
-    console.log(`Quiz generation completed in ${Date.now() - startTime}ms with ${formattedQuestions.length} questions`);
-    return res.json(formattedQuestions);
-      
   } catch (error) {
-    console.error('Unhandled quiz generation error:', error);
-    
-    // Return a friendly error response with fallback questions
+    console.error('Quiz generation error:', error);
     if (!res.headersSent) {
-      // Generate emergency fallback questions
-      const courseName = 'this topic';
-      const fallbackQuestions = generateFallbackQuestions(
-        courseName,
-        req.body.difficulty || 'medium',
-        actualNumberOfQuestions,
-        req.body.timePerQuestion || 30
-      );
-      
-      console.log(`Returning ${fallbackQuestions.length} emergency fallback questions due to unhandled error`);
-      return res.json(fallbackQuestions);
+      res.status(500).json({
+        message: 'Error generating quiz',
+        error: error.message || 'An unexpected error occurred'
+      });
     }
   }
 });
@@ -1573,134 +1435,3 @@ app.get('/', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-
-// Utility function to generate consistent fallback questions
-function generateFallbackQuestions(courseName, difficulty, count, timePerQuestion = 30) {
-  const difficultyFactors = {
-    easy: { wordCount: 'basics', complexity: 'fundamental concepts' },
-    medium: { wordCount: 'intermediate topics', complexity: 'practical applications' },
-    hard: { wordCount: 'advanced principles', complexity: 'theoretical frameworks' }
-  };
-  
-  const factor = difficultyFactors[difficulty?.toLowerCase()] || difficultyFactors.medium;
-  const questions = [];
-  
-  // Course-related question templates
-  const templates = [
-    `What is a key ${factor.complexity} in ${courseName}?`,
-    `Which of the following best describes ${factor.wordCount} of ${courseName}?`,
-    `In the context of ${courseName}, which ${factor.complexity} is most important?`,
-    `Which statement about ${courseName} is correct regarding ${factor.wordCount}?`,
-    `What is a common application of ${factor.complexity} in ${courseName}?`,
-    `How would experts define ${factor.wordCount} in ${courseName}?`,
-    `Which approach is most effective when studying ${factor.complexity} of ${courseName}?`,
-    `What principle underlies the ${factor.wordCount} of ${courseName}?`,
-    `Which term is most closely associated with ${factor.complexity} in ${courseName}?`,
-    `What is considered a fundamental aspect of ${factor.wordCount} in ${courseName}?`
-  ];
-  
-  // Generate course-related option templates based on the course name
-  const getOptionsForTemplate = (templateIndex, courseNameSafe) => {
-    // Create options that sound plausible for an educational context
-    const optionSets = [
-      // Set 1: Concepts
-      [
-        `The fundamental principles that form the foundation of ${courseNameSafe}`,
-        `The practical applications commonly used in ${courseNameSafe}`,
-        `The theoretical frameworks that explain ${courseNameSafe}`,
-        `The historical development and evolution of ${courseNameSafe}`
-      ],
-      // Set 2: Descriptions
-      [
-        `A systematic approach to understanding the core elements of ${courseNameSafe}`,
-        `A methodology for implementing solutions related to ${courseNameSafe}`,
-        `A conceptual framework used to analyze problems in ${courseNameSafe}`,
-        `A set of practices designed to optimize processes in ${courseNameSafe}`
-      ],
-      // Set 3: Importance
-      [
-        `Understanding the underlying theories and their applications`,
-        `Developing practical skills through hands-on experimentation`,
-        `Memorizing key terms and definitions precisely`,
-        `Analyzing real-world case studies and examples`
-      ],
-      // Set 4: Statements
-      [
-        `It requires both theoretical knowledge and practical application`,
-        `It originated in the early 20th century and has evolved significantly`,
-        `It incorporates principles from multiple related disciplines`,
-        `It focuses primarily on solving specific types of problems`
-      ],
-      // Set 5: Applications
-      [
-        `Solving complex problems in industry settings`,
-        `Developing new theoretical frameworks`,
-        `Educating students about fundamental concepts`,
-        `Improving existing systems and processes`
-      ],
-      // Sets 6-10 for remaining templates
-      [
-        `A discipline focused on systematic problem-solving`,
-        `The study of fundamental principles and their applications`,
-        `A methodological approach to understanding complex systems`,
-        `A field that integrates theory with practical implementation`
-      ],
-      [
-        `Breaking down complex problems into manageable components`,
-        `Applying established frameworks to new situations`,
-        `Combining theoretical knowledge with practical experimentation`,
-        `Following standardized protocols and best practices`
-      ],
-      [
-        `The relationship between theory and practice`,
-        `The systematic organization of knowledge`,
-        `The application of scientific methods`,
-        `The integration of diverse perspectives`
-      ],
-      [
-        `Analysis and critical thinking`,
-        `Implementation and execution`,
-        `Design and planning`,
-        `Evaluation and assessment`
-      ],
-      [
-        `Understanding core concepts before moving to applications`,
-        `Practical application of theoretical knowledge`,
-        `The integration of various subdisciplines`,
-        `The continuous evolution of methods and approaches`
-      ]
-    ];
-    
-    // Use the template index to select an appropriate option set
-    const setIndex = templateIndex % optionSets.length;
-    return optionSets[setIndex];
-  };
-  
-  for (let i = 0; i < count; i++) {
-    // Select a template based on the index, with wraparound
-    const templateIndex = i % templates.length;
-    const question = templates[templateIndex];
-    
-    // Generate consistent correctAnswer (rotating through A, B, C, D)
-    const correctAnswer = String.fromCharCode(65 + (i % 4)); // A, B, C, D in sequence
-    
-    // Get appropriate options for this template
-    const courseNameSafe = courseName || 'this subject';
-    const optionTexts = getOptionsForTemplate(templateIndex, courseNameSafe);
-    
-    // Create properly formatted options with A, B, C, D prefixes
-    const options = optionTexts.map((text, idx) => 
-      `${String.fromCharCode(65 + idx)}. ${text}`
-    );
-    
-    questions.push({
-      id: i + 1,
-      question: question,
-      options: options,
-      correctAnswer: correctAnswer,
-      timePerQuestion: Number(timePerQuestion) || 30
-    });
-  }
-  
-  return questions;
-}

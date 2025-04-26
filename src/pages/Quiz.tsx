@@ -644,38 +644,47 @@ const generateQuiz = async () => {
     });
   }, []);
 
-  // Update the handleAnswerSelect function to work with the letter only
-  const handleAnswerSelect = React.useCallback((answer: string) => {
-    if (!questionStates[currentQuestion]?.viewed) {
-      // For this question, calculate whether the answer is correct
-      const correctAnswer = questions[currentQuestion].correctAnswer.toUpperCase();
-      const isCorrect = answer.toUpperCase() === correctAnswer;
-      
-      // Pause the timer
-      setTimerActive(false);
-      
-      // Update question state to include the answer and viewed status
-      const updatedState = {
-        ...questionStates[currentQuestion],
-        userAnswer: answer,
-        viewed: true,
-        isCorrect: isCorrect,
-        timeLeft: timeLeft
+  // Ensure consistent feedback across all combinations of question counts and difficulty
+  const handleAnswerSelect = React.useCallback((selectedLetter: string, optionText: string) => {
+    if (!questions || currentQuestion >= questions.length) return;
+    
+    const currentQuestionObj = questions[currentQuestion];
+    
+    // Always normalize answers to uppercase for consistent comparison
+    const normalizedCorrectAnswer = currentQuestionObj.correctAnswer.toUpperCase().trim();
+    const normalizedSelectedAnswer = selectedLetter.toUpperCase().trim();
+    
+    // Direct letter comparison
+    const isCorrect = normalizedSelectedAnswer === normalizedCorrectAnswer;
+    
+    console.log(`Selected: "${normalizedSelectedAnswer}", Correct: "${normalizedCorrectAnswer}", isCorrect: ${isCorrect}`);
+    
+    // Set the selected answer in state
+    setSelectedAnswer(selectedLetter);
+    
+    // CRITICAL: Always mark the question as viewed to ensure feedback is shown
+    setQuestionStates(prevStates => {
+      const newStates = [...prevStates];
+      newStates[currentQuestion] = {
+        ...newStates[currentQuestion],
+        userAnswer: selectedLetter.toUpperCase(), // Always store uppercase
+        viewed: true, // ALWAYS true to show feedback
+        isCorrect: isCorrect
       };
-      
-      const newStates = [...questionStates];
-      newStates[currentQuestion] = updatedState;
-      setQuestionStates(newStates);
-      
-      // Update the score if the answer is correct
-      if (isCorrect) {
-        setScore(prevScore => prevScore + 1);
-      }
-      
-      // Instead of auto-advancing, just show the feedback
-      // The user can manually advance to the next question
+      return newStates;
+    });
+    
+    // If correct and not previously answered, increase score
+    if (isCorrect && !questionStates[currentQuestion]?.viewed) {
+      setScore(prevScore => prevScore + 1);
     }
-  }, [currentQuestion, questions, questionStates, timeLeft]);
+    
+    // Always show the result
+    setShowResult(true);
+    
+    // Stop the timer
+    setTimerActive(false);
+  }, [currentQuestion, questions, questionStates, score]);
 
   useEffect(() => {
     let timer: Timeout;
@@ -1039,13 +1048,8 @@ const generateQuiz = async () => {
     
     // Determine if we should show feedback
     const showFeedback = selectedAnswer !== null;
-    
-    // Ensure the question text is properly clean and formatted
-    const questionText = typeof currentQuestionObj.question === 'string' 
-      ? currentQuestionObj.question.trim() 
-      : `Question ${currentQuestion + 1}`;
 
-    return (
+                  return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-200 dark:border-gray-700">
         <motion.h3 
           className="text-lg font-bold mb-4 text-gray-900 dark:text-white"
@@ -1053,104 +1057,180 @@ const generateQuiz = async () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          {questionText}
+          {currentQuestionObj.question}
         </motion.h3>
         
         <div className="space-y-2">
           {currentQuestionObj.options.map((option, idx) => {
-            // Handle different option formats (string or object with text property)
-            let optionText = typeof option === 'object' && option !== null && 'text' in option 
+            const optionText = typeof option === 'object' && option !== null && 'text' in option 
               ? (option as {text: string}).text 
               : String(option);
             
-            // Clean and format the option text
-            optionText = optionText.trim();
-            
-            // Remove any duplicate letter prefixes using enhanced regex
-            optionText = optionText
-              .replace(/^([A-Da-d])[.):]\s*\1[.):]\s*/i, '') // Double prefixes like "A. A:" or "a) a)"
-              .trim();
-            
-            // Make sure we have a letter prefix (A., B., etc.)
-            const optionLetter = String.fromCharCode(65 + idx); // A, B, C, D
-            if (!optionText.startsWith(`${optionLetter}.`) && 
-                !optionText.startsWith(`${optionLetter})`)) {
-              // Check if it has any letter prefix
-              const hasLetterPrefix = /^[A-Da-d][.):]\s/.test(optionText);
-              if (hasLetterPrefix) {
-                // Replace existing prefix with the correct one
-                optionText = optionText.replace(/^[A-Da-d][.):]\s*/i, `${optionLetter}. `);
-              } else {
-                // Add the prefix if none exists
-                optionText = `${optionLetter}. ${optionText}`;
-              }
-            }
-            
-            const isSelected = selectedAnswer === optionLetter;
+            const optionLabel = String.fromCharCode(65 + idx); // A, B, C, D
+            const isSelected = selectedAnswer === optionLabel;
             
             // Determine if the answer is correct
             const correctAnswer = currentQuestionObj.correctAnswer.toUpperCase();
-            const isCorrect = optionLetter.toUpperCase() === correctAnswer.toUpperCase();
+            const isCorrect = optionLabel.toUpperCase() === correctAnswer.toUpperCase();
             const isWrong = isSelected && !isCorrect;
             
-            // Apply appropriate styling based on selection state and correctness
-            let bgColorClass = "bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700";
-            let borderColorClass = "border border-gray-200 dark:border-gray-700";
-            let textColorClass = "text-gray-800 dark:text-gray-200";
-            
-            if (isSelected) {
-              if (showFeedback) {
-                if (isCorrect) {
-                  bgColorClass = "bg-green-50 dark:bg-green-900/20";
-                  borderColorClass = "border-2 border-green-500";
-                  textColorClass = "text-green-900 dark:text-green-300";
-                } else {
-                  bgColorClass = "bg-red-50 dark:bg-red-900/20";
-                  borderColorClass = "border-2 border-red-500";
-                  textColorClass = "text-red-900 dark:text-red-300";
-                }
-              } else {
-                bgColorClass = "bg-blue-50 dark:bg-blue-900/20";
-                borderColorClass = "border-2 border-blue-500";
-                textColorClass = "text-blue-900 dark:text-blue-300";
+            // Get background color based on answer state
+            const getBgColor = () => {
+              if (!showFeedback) {
+                // No selection made yet
+                return 'bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30';
               }
-            }
+              
+              if (isSelected && isCorrect) {
+                // Selected and correct
+                return 'bg-green-100 border-green-300 dark:bg-green-900/30 dark:border-green-700';
+              } else if (isSelected && isWrong) {
+                // Selected and wrong
+                return 'bg-red-100 border-red-300 dark:bg-red-900/30 dark:border-red-700';
+              } else if (isCorrect && showFeedback) {
+                // This is the correct answer but wasn't selected
+                return 'bg-green-100 border-green-300 dark:bg-green-900/30 dark:border-green-700';
+              } else {
+                // Not selected and not correct
+                return 'bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700';
+              }
+            };
             
             return (
               <motion.div
                 key={idx}
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, delay: idx * 0.1 }}
-                className={`p-3 rounded-lg ${bgColorClass} ${borderColorClass} cursor-pointer transition-colors`}
-                onClick={() => !questionState.viewed && handleAnswerSelect(optionLetter)}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3, delay: idx * 0.05 }}
+              >
+                <div 
+                  onClick={() => !showFeedback && handleAnswerSelect(optionLabel, optionText)}
+                  className={`
+                    p-3 rounded-lg cursor-pointer transition-all duration-200 flex items-center justify-between
+                    ${getBgColor()}
+                  `}
               >
                 <div className="flex items-center">
-                  <span className={`w-6 h-6 rounded-full flex items-center justify-center mr-2 
-                    ${isSelected ? 'bg-blue-600 dark:bg-blue-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}>
-                    {optionLetter}
-                  </span>
-                  <span className={textColorClass}>{optionText.replace(/^[A-Da-d][.):]\s+/i, '')}</span>
+                    <span className={`
+                      flex items-center justify-center w-6 h-6 rounded-full mr-3 text-sm font-medium
+                      ${isSelected && isCorrect ? 'bg-green-500 text-white' : 
+                        isSelected && isWrong ? 'bg-red-500 text-white' : 
+                        isCorrect && showFeedback ? 'bg-green-500 text-white' : 
+                        'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400'}
+                    `}>
+                      {optionLabel}
+                      </span>
+                    <span className="text-gray-700 dark:text-gray-300">{optionText}</span>
+              </div>
                   
-                  {/* Add feedback icons when answer is selected and feedback is shown */}
+                  {/* Always show answer feedback if an option is selected */}
                   {showFeedback && (
-                    <span className="ml-auto">
-                      {isCorrect && (
-                        <CheckCircle className="h-5 w-5 text-green-500 dark:text-green-400" />
+                    <div className="flex items-center ml-auto">
+                      {isSelected && isWrong && (
+                        <motion.div 
+                          initial={{ opacity: 0, x: 10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="flex items-center ml-2 text-red-600 dark:text-red-400"
+                        >
+                          <XCircle className="w-4 h-4 mr-1" />
+                          <span className="text-xs font-medium whitespace-nowrap">Your answer</span>
+                        </motion.div>
                       )}
-                      {isWrong && (
-                        <XCircle className="h-5 w-5 text-red-500 dark:text-red-400" />
+                      
+                      {isSelected && isCorrect && (
+                        <motion.div 
+                          initial={{ opacity: 0, x: 10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="flex items-center ml-2 text-green-600 dark:text-green-400"
+                        >
+                          <CheckCircle className="w-4 h-4 mr-1" />
+                          <span className="text-xs font-medium whitespace-nowrap">Your answer - Correct</span>
+                        </motion.div>
                       )}
-                    </span>
+                      
+                      {isCorrect && !isSelected && (
+                        <motion.div 
+                          initial={{ opacity: 0, x: 10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="flex items-center ml-2 text-green-600 dark:text-green-400"
+                        >
+                          <CheckCircle className="w-4 h-4 mr-1" />
+                          <span className="text-xs font-medium whitespace-nowrap">Correct answer</span>
+                        </motion.div>
+                      )}
+            </div>
                   )}
-                </div>
+          </div>
               </motion.div>
             );
           })}
+            </div>
+            
+        {/* Navigation buttons - ALWAYS VISIBLE */}
+        <motion.div 
+          className="mt-4 flex flex-wrap justify-between items-center gap-2"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          {/* Previous Button - Always visible */}
+              <button
+                onClick={handlePreviousQuestion}
+                disabled={currentQuestion === 0}
+            className={`px-3 py-1.5 rounded-lg transition-all text-sm ${
+              currentQuestion === 0
+                ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400 cursor-not-allowed'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600'
+            }`}
+          >
+                Previous
+              </button>
+
+          {/* Action Buttons - Always visible */}
+          <div className="flex gap-2">
+            {/* AI Help Button - Always visible */}
+                <button
+              onClick={handleGetAIHelp}
+              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-all dark:bg-purple-700 dark:hover:bg-purple-600"
+            >
+              Get AI Help
+                </button>
+
+            {/* Finish Quiz Button - Always visible but disabled unless on last question */}
+                <button
+              onClick={handleFinishQuiz}
+              disabled={currentQuestion !== questions.length - 1}
+              className={`px-3 py-1.5 text-white text-sm rounded-lg transition-all ${
+                currentQuestion === questions.length - 1
+                  ? 'bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600'
+                  : 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
+              }`}
+            >
+              Finish Quiz
+                </button>
         </div>
+          
+          {/* Next Button - Always visible */}
+          <button
+            onClick={handleNextQuestion}
+            disabled={currentQuestion === questions.length - 1}
+            className={`px-3 py-1.5 rounded-lg transition-all text-sm ${
+              currentQuestion === questions.length - 1
+                ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400 cursor-not-allowed'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600'
+            }`}
+          >
+            Next
+          </button>
+        </motion.div>
       </div>
     );
-  }, [currentQuestion, questions, questionStates, quizDetails.timePerQuestion, handleAnswerSelect]);
+  }, [currentQuestion, questions, questionStates, handleAnswerSelect, handleNextQuestion, handlePreviousQuestion, handleFinishQuiz, handleGetAIHelp, quizDetails.timePerQuestion]);
 
   // Memoized values
   const uniqueCourses = useMemo(() => {
