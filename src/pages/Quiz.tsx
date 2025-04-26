@@ -2339,9 +2339,25 @@ if (currentQuestion >= questions?.length && questions?.length > 0) {
                       id: `${courseObj.name}-${score}-${questions.length}-${Date.now()}`
                     };
                     
+                    // Store quiz data in multiple locations to ensure it's available
+                    console.log('Saving quiz data for AI Assist:', quizData);
+                    
+                    // Save to localStorage with the key used by AIAssist component
                     localStorage.setItem('quizData', JSON.stringify(quizData));
+                    
+                    // Save a backup copy with a different key
+                    localStorage.setItem('lastQuizData', JSON.stringify(quizData));
+                    
+                    // Save to sessionStorage as another fallback
+                    sessionStorage.setItem('quizData', JSON.stringify(quizData));
+                    
+                    // Set in context using the proper method
                     setQuizData(quizData);
-                    navigate('/ai-assist');
+                    
+                    // Use setTimeout to ensure data is fully saved before navigation
+                    setTimeout(() => {
+                      navigate('/ai-assist');
+                    }, 100);
                   }}
                   className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg shadow-sm transition-colors focus:ring-4 focus:ring-purple-300"
                 >

@@ -349,28 +349,48 @@ const AIAssist: React.FC = () => {
     console.log('Searching for quiz data from multiple sources...');
     
     // Try context first
-    if (quizData) {
-      console.log('Found quiz data in context');
+    if (quizData && Object.keys(quizData).length > 0) {
+      console.log('Found quiz data in context:', quizData);
       return quizData;
     }
     
-    // Then try localStorage
+    // Then try localStorage with primary key
     try {
       const storedQuizData = localStorage.getItem('quizData');
       if (storedQuizData) {
-        console.log('Found quiz data in localStorage');
-        return JSON.parse(storedQuizData);
+        const parsedData = JSON.parse(storedQuizData);
+        if (parsedData && Object.keys(parsedData).length > 0) {
+          console.log('Found quiz data in localStorage (quizData)');
+          return parsedData;
+        }
       }
     } catch (error) {
       console.error('Error parsing quiz data from localStorage:', error);
+    }
+    
+    // Then try localStorage with secondary key (QUIZ_DATA_KEY from QuizContext)
+    try {
+      const contextQuizData = localStorage.getItem('quiz_data');
+      if (contextQuizData) {
+        const parsedData = JSON.parse(contextQuizData);
+        if (parsedData && Object.keys(parsedData).length > 0) {
+          console.log('Found quiz data in localStorage (quiz_data)');
+          return parsedData;
+        }
+      }
+    } catch (error) {
+      console.error('Error parsing quiz_data from localStorage:', error);
     }
     
     // Then try lastQuizData
     try {
       const lastQuizData = localStorage.getItem('lastQuizData');
       if (lastQuizData) {
-        console.log('Found quiz data in lastQuizData');
-        return JSON.parse(lastQuizData);
+        const parsedData = JSON.parse(lastQuizData);
+        if (parsedData && Object.keys(parsedData).length > 0) {
+          console.log('Found quiz data in lastQuizData');
+          return parsedData;
+        }
       }
     } catch (error) {
       console.error('Error parsing lastQuizData from localStorage:', error);
@@ -380,8 +400,11 @@ const AIAssist: React.FC = () => {
     try {
       const sessionQuizData = sessionStorage.getItem('quizData');
       if (sessionQuizData) {
-        console.log('Found quiz data in sessionStorage');
-        return JSON.parse(sessionQuizData);
+        const parsedData = JSON.parse(sessionQuizData);
+        if (parsedData && Object.keys(parsedData).length > 0) {
+          console.log('Found quiz data in sessionStorage');
+          return parsedData;
+        }
       }
     } catch (error) {
       console.error('Error parsing quiz data from sessionStorage:', error);
@@ -403,7 +426,7 @@ const AIAssist: React.FC = () => {
     
     try {
       // Find quiz data from any available source
-      const foundQuizData = quizData || findQuizData();
+      const foundQuizData = findQuizData();
       
       if (!foundQuizData) {
         console.error('No quiz data available for processing');
@@ -413,6 +436,16 @@ const AIAssist: React.FC = () => {
       console.log('Processing quiz data:', foundQuizData);
       console.log('Quiz data course name:', foundQuizData.courseName);
       console.log('Quiz data score:', foundQuizData.score);
+      console.log('Quiz data has questions:', Array.isArray(foundQuizData.questions), 
+                 'count:', foundQuizData.questions?.length);
+      
+      // Ensure the quiz data is set in the context
+      if (!quizData) {
+        console.log('Setting quiz data in context');
+        setQuizData(foundQuizData);
+        // Wait a moment for the context to update
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
       
       // Generate the quiz summary only once
       const quizSummary = generateQuizSummary(foundQuizData);
@@ -428,30 +461,43 @@ const AIAssist: React.FC = () => {
       if (existingQuizChat) {
         console.log('Found existing quiz chat, using that instead of creating a new one');
         setCurrentChatId(existingQuizChat._id);
-        setMessages(existingQuizChat.messages);
+        await loadChat(existingQuizChat._id);
         localStorage.setItem('lastActiveChatId', existingQuizChat._id);
       } else {
-        console.log('Creating new quiz review chat');
+        console.log('Creating new quiz review chat with quiz data');
         const quizMessage = { role: 'assistant' as const, content: quizSummary };
-        await createNewChat([quizMessage], {
+        const newChatId = await createNewChat([quizMessage], {
           type: 'quiz_review',
           metadata: {
             quizSummary,
             courseName: foundQuizData.courseName
           }
         });
+        
+        if (newChatId) {
+          // Ensure the chat is loaded
+          await loadChat(newChatId);
+        }
       }
       
-      // Clear from both localStorage and context after processing
+      // Move any temporary storage to more permanent storage
+      if (sessionStorage.getItem('quizData')) {
+        localStorage.setItem('lastQuizData', sessionStorage.getItem('quizData')!);
+      }
+      
+      // Keep lastQuizData for potential future reference
+      // but clear the current quizData to prevent reprocessing
       localStorage.removeItem('quizData');
-      console.log('Clearing quiz data from context after processing');
-      setQuizData(null);
+      sessionStorage.removeItem('quizData');
+      
+      // Leave the context data intact in case it's needed elsewhere
+      console.log('Quiz data processed successfully');
     } catch (error) {
       console.error('Error processing quiz data:', error);
     } finally {
       isProcessingQuizRef.current = false;
     }
-  }, [quizData, chatHistories, generateQuizSummary, createNewChat, setQuizData]);
+  }, [quizData, chatHistories, generateQuizSummary, createNewChat, setQuizData, loadChat, findQuizData]);
 
   // Now define initializeAIAssist after processQuizData is defined
   const initializeAIAssist = useCallback(async () => {
