@@ -103,6 +103,24 @@ const cleanMarkdown = (text: string): string => {
   return fixed;
 };
 
+// Add a helper function near the top of the file to safely parse options
+const parseOptionText = (option: any): string => {
+  // Initialize optionText immediately to avoid temporal dead zone issues
+  let optionText = '';
+  
+  if (typeof option === 'object' && option !== null) {
+    if ('text' in option) {
+      optionText = String(option.text || '');
+    } else {
+      optionText = String(option);
+    }
+  } else {
+    optionText = String(option || '');
+  }
+  
+  return optionText;
+};
+
 const AIAssist: React.FC = () => {
   // State declarations
   const { quizData, setQuizData } = useQuiz();
@@ -172,13 +190,8 @@ const AIAssist: React.FC = () => {
         options.forEach((option, optIdx) => {
           const optionLetter = String.fromCharCode(65 + optIdx); // A, B, C, D...
           
-          // Get clean option text
-          let optionText;
-          if (typeof option === 'object' && option !== null) {
-            optionText = option.text || String(option);
-          } else {
-            optionText = String(option);
-          }
+          // CRITICAL FIX: Use the safe parsing function
+          const optionText = parseOptionText(option);
           
           // Clean option text with enhanced regex for all prefix types
           const cleanedText = optionText

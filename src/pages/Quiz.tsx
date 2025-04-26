@@ -554,27 +554,46 @@ const isDefaultQuestion = (question: any, courseName: string): boolean => {
   const questionIsDefault = questionPatterns.some(pattern => 
     pattern.test(String(question.question)));
   
-  // Check if options match default patterns - FIX: Make sure we initialize optStr before using it
-  const optionsAreDefault = question.options && Array.isArray(question.options) &&
-    question.options.some((opt: any) => {
-      // Initialize optStr before using it to avoid temporal dead zone issues
+  // CRITICAL FIX: Initialize and define optionsAreDefault with clear variable initialization
+  let optionsAreDefault = false;
+  if (question.options && Array.isArray(question.options)) {
+    optionsAreDefault = question.options.some((opt: any) => {
+      // CRITICAL FIX: Define optStr before using it to avoid temporal dead zone
       const optStr = typeof opt === 'string' ? opt : 
                     (opt !== null && typeof opt === 'object' && 'text' in opt) ? opt.text : '';
       return optionPatterns.some(pattern => pattern.test(String(optStr)));
     });
+  }
   
-  // Check if all options are very short (like single words)
-  const allOptionsVeryShort = question.options && 
-                             Array.isArray(question.options) && 
-                             question.options.length > 0 &&
-                             question.options.every((opt: any) => {
-                               // FIX: Make sure we initialize optStr before using it, using same pattern as above
-                               const optStr = typeof opt === 'string' ? opt : 
-                                           (opt !== null && typeof opt === 'object' && 'text' in opt) ? opt.text : '';
-                               return String(optStr).trim().split(/\s+/).length <= 1;
-                             });
+  // CRITICAL FIX: Initialize and define allOptionsVeryShort with clear variable initialization
+  let allOptionsVeryShort = false;
+  if (question.options && Array.isArray(question.options) && question.options.length > 0) {
+    allOptionsVeryShort = question.options.every((opt: any) => {
+      // CRITICAL FIX: Define optStr before using it to avoid temporal dead zone
+      const optStr = typeof opt === 'string' ? opt : 
+                   (opt !== null && typeof opt === 'object' && 'text' in opt) ? opt.text : '';
+      return String(optStr).trim().split(/\s+/).length <= 1;
+    });
+  }
   
   return questionIsDefault || optionsAreDefault || allOptionsVeryShort;
+};
+
+// CRITICAL FIX: Similar pattern for handling options throughout the component
+// Update the parseOption function to safely extract text from option objects
+const parseOptionText = (opt: any): string => {
+  // Define the variable before any conditional logic to avoid TDZ
+  let optionText = '';
+  
+  if (typeof opt === 'string') {
+    optionText = opt;
+  } else if (opt !== null && typeof opt === 'object') {
+    if ('text' in opt) {
+      optionText = String(opt.text);
+    }
+  }
+  
+  return optionText.trim();
 };
 
 // Add an emergency abort function for active quizzes showing default questions
@@ -930,14 +949,13 @@ const generateQuiz = async () => {
         userId: user?._id,
         courseId: selectedCourse,
         questions: questions.map((q, index) => {
-          // Get option text and clean it if it's a string
+          // CRITICAL FIX: Use parseOptionText to safely process options
           const cleanedOptions = q.options.map((opt, i) => {
-            let optionText = typeof opt === 'object' && opt !== null && 'text' in opt 
-              ? (opt as {text: string}).text 
-              : String(opt);
+            // Use our safe parsing function
+            const optionText = parseOptionText(opt);
             
             // Enhanced regex to remove duplicate prefixes
-            optionText = optionText
+            const cleanedText = optionText
               // First, handle double prefixes like "A. A:" or "D) D:"
               .replace(/^([A-Da-d])[.):]\s*\1[.):]\s*/g, '')
               // Then handle single prefixes like "A." or "A)"
@@ -947,7 +965,7 @@ const generateQuiz = async () => {
               .trim();
             
             return {
-              text: optionText,
+              text: cleanedText,
               label: String.fromCharCode(65 + i) // 'A', 'B', 'C', etc.
             };
           });
@@ -1027,13 +1045,11 @@ const generateQuiz = async () => {
         return {
           question: q.question,
           options: q.options.map((opt, optIndex) => {
-            // Get option text and clean it
-            let optionText = typeof opt === 'object' && opt !== null && 'text' in opt 
-              ? (opt as {text: string}).text 
-              : String(opt);
+            // CRITICAL FIX: Use our safe parsing function
+            const optionText = parseOptionText(opt);
             
-            // Enhanced regex to remove various duplicate letter prefixes
-            optionText = optionText
+            // Process the text AFTER we've safely extracted it
+            const cleanedText = optionText
               // First, handle double prefixes like "A. A:" or "D) D:"
               .replace(/^([A-Da-d])[.):]\s*\1[.):]\s*/g, '')
               // Then handle single prefixes like "A." or "A)"
@@ -1043,7 +1059,7 @@ const generateQuiz = async () => {
               .trim();
             
             return {
-              text: optionText,
+              text: cleanedText,
               label: String.fromCharCode(65 + optIndex) // Always A, B, C, D
             };
           }),
@@ -1082,15 +1098,13 @@ const generateQuiz = async () => {
     // Prepare quiz data with complete and consistent question details
     const quizData = {
       questions: questions.map((q, index) => {
-        // Normalize options format consistently
+        // CRITICAL FIX: Use parseOptionText for safe option handling
         const questionOptions = q.options.map((opt, optIndex) => {
-          // Get option text and clean it
-          let optionText = typeof opt === 'object' && opt !== null && 'text' in opt 
-            ? (opt as {text: string}).text 
-            : String(opt);
+          // Use our safe parsing function
+          const optionText = parseOptionText(opt);
           
-          // Enhanced regex to remove various duplicate letter prefixes
-          optionText = optionText
+          // Process the text AFTER safely extracting it
+          const cleanedText = optionText
             // First, handle double prefixes like "A. A:" or "D) D:"
             .replace(/^([A-Da-d])[.):]\s*\1[.):]\s*/g, '')
             // Then handle single prefixes like "A." or "A)"
@@ -1100,7 +1114,7 @@ const generateQuiz = async () => {
             .trim();
           
           return {
-            text: optionText,
+            text: cleanedText,
             label: String.fromCharCode(65 + optIndex) // Always A, B, C, D
           };
         });
@@ -1158,7 +1172,7 @@ const generateQuiz = async () => {
           replace: true 
         });
     });
-  }, [questions, questionStates, courses, selectedCourse, quizDetails.difficulty, calculateFinalScore, saveQuizResult, navigate, setQuizData]);
+  }, [questions, questionStates, calculateFinalScore, saveQuizResult, navigate, setQuizData]);
 
   // Function to handle navigation between questions via the question number buttons
   /* const handleQuestionNav = React.useCallback((index: number) => {
@@ -1246,194 +1260,37 @@ const generateQuiz = async () => {
         
         <div className="space-y-2">
           {currentQuestionObj.options.map((option, idx) => {
-            // Improved option text extraction with better cleaning
-            let optionText = typeof option === 'object' && option !== null && 'text' in option 
-              ? (option as {text: string}).text 
-              : String(option);
+            // CRITICAL FIX: Use the parseOptionText function for safe option text extraction
+            const optionText = parseOptionText(option);
             
-            // Enhanced regex to aggressively remove all types of letter prefixes 
-            optionText = optionText
-              // Remove double prefixes like "A. A:" or "D) D:"
+            // Apply any transformations or cleanup to the already safely extracted text
+            const cleanedText = optionText
               .replace(/^([A-Da-d])[.):]\s*\1[.):]\s*/g, '')
-              // Remove all varieties of letter prefixes
               .replace(/^[A-Da-d][.):]\s*/g, '')
-              .replace(/^[A-Da-d]\.\s*/g, '')
-              .replace(/^[A-Da-d]\)\s*/g, '')
-              .replace(/^[A-Da-d][:]\s*/g, '')
               .replace(/^[A-Da-d]\s+/g, '')
-              // Also handle lowercase variations
-              .replace(/^[a-d][.):]\s*/g, '')
-              .replace(/^[a-d]\.\s*/g, '')
-              .replace(/^[a-d]\)\s*/g, '')
-              .replace(/^[a-d][:]\s*/g, '')
-              .replace(/^[a-d]\s+/g, '')
               .trim();
             
-            const optionLabel = String.fromCharCode(65 + idx); // A, B, C, D
-            const isSelected = selectedAnswer === optionLabel;
-            
-            // Determine if the answer is correct
-            const correctAnswer = currentQuestionObj.correctAnswer.toUpperCase();
-            const isCorrect = optionLabel.toUpperCase() === correctAnswer.toUpperCase();
-            const isWrong = isSelected && !isCorrect;
-            
-            // Get background color based on answer state
-            const getBgColor = () => {
-              if (!showFeedback) {
-                // No selection made yet
-                return 'bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30';
-              }
-              
-              if (isSelected && isCorrect) {
-                // Selected and correct
-                return 'bg-green-100 border-green-300 dark:bg-green-900/30 dark:border-green-700';
-              } else if (isSelected && isWrong) {
-                // Selected and wrong
-                return 'bg-red-100 border-red-300 dark:bg-red-900/30 dark:border-red-700';
-              } else if (isCorrect && showFeedback) {
-                // This is the correct answer but wasn't selected
-                return 'bg-green-100 border-green-300 dark:bg-green-900/30 dark:border-green-700';
-              } else {
-                // Not selected and not correct
-                return 'bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700';
-              }
-            };
+            const letter = String.fromCharCode(65 + idx);
+            const isSelected = selectedAnswer === letter;
+            const isCorrect = showResult && letter === currentQuestionObj.correctAnswer;
+            const isIncorrect = showResult && isSelected && letter !== currentQuestionObj.correctAnswer;
             
             return (
-              <motion.div
+              <button
                 key={idx}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: idx * 0.05 }}
+                className={`option-button ${isSelected ? 'selected' : ''} ${isCorrect ? 'correct' : ''} ${isIncorrect ? 'incorrect' : ''}`}
+                onClick={() => handleAnswerSelect(letter, cleanedText)}
+                disabled={showResult}
               >
-                <div 
-                  onClick={() => !showFeedback && handleAnswerSelect(optionLabel, optionText)}
-                  className={`
-                    p-3 rounded-lg cursor-pointer transition-all duration-200 flex items-center justify-between
-                    ${getBgColor()}
-                  `}
-              >
-                <div className="flex items-center">
-                    <span className={`
-                      flex items-center justify-center w-6 h-6 rounded-full mr-3 text-sm font-medium
-                      ${isSelected && isCorrect ? 'bg-green-500 text-white' : 
-                        isSelected && isWrong ? 'bg-red-500 text-white' : 
-                        isCorrect && showFeedback ? 'bg-green-500 text-white' : 
-                        'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400'}
-                    `}>
-                      {optionLabel}
-                      </span>
-                    <span className="text-gray-700 dark:text-gray-300">{optionText}</span>
-              </div>
-                  
-                  {/* Always show answer feedback if an option is selected */}
-                  {showFeedback && (
-                    <div className="flex items-center ml-auto">
-                      {isSelected && isWrong && (
-                        <motion.div 
-                          initial={{ opacity: 0, x: 10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ duration: 0.3 }}
-                          className="flex items-center ml-2 text-red-600 dark:text-red-400"
-                        >
-                          <XCircle className="w-4 h-4 mr-1" />
-                          <span className="text-xs font-medium whitespace-nowrap">Your answer</span>
-                        </motion.div>
-                      )}
-                      
-                      {isSelected && isCorrect && (
-                        <motion.div 
-                          initial={{ opacity: 0, x: 10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ duration: 0.3 }}
-                          className="flex items-center ml-2 text-green-600 dark:text-green-400"
-                        >
-                          <CheckCircle className="w-4 h-4 mr-1" />
-                          <span className="text-xs font-medium whitespace-nowrap">Your answer - Correct</span>
-                        </motion.div>
-                      )}
-                      
-                      {isCorrect && !isSelected && (
-                        <motion.div 
-                          initial={{ opacity: 0, x: 10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ duration: 0.3 }}
-                          className="flex items-center ml-2 text-green-600 dark:text-green-400"
-                        >
-                          <CheckCircle className="w-4 h-4 mr-1" />
-                          <span className="text-xs font-medium whitespace-nowrap">Correct answer</span>
-                        </motion.div>
-                      )}
-            </div>
-                  )}
-          </div>
-              </motion.div>
+                <div className="option-letter">{letter}</div>
+                <div className="option-text">{cleanedText}</div>
+              </button>
             );
           })}
-            </div>
-            
-        {/* Navigation buttons - ALWAYS VISIBLE */}
-        <motion.div 
-          className="mt-4 flex flex-wrap justify-between items-center gap-2"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          {/* Previous Button - Always visible */}
-              <button
-                onClick={handlePreviousQuestion}
-                disabled={currentQuestion === 0}
-            className={`px-3 py-1.5 rounded-lg transition-all text-sm ${
-              currentQuestion === 0
-                ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400 cursor-not-allowed'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600'
-            }`}
-          >
-                Previous
-              </button>
-
-          {/* Action Buttons - Always visible */}
-          <div className="flex gap-2">
-            {/* AI Help Button - Always visible */}
-                <button
-              onClick={handleGetAIHelp}
-              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-all dark:bg-purple-700 dark:hover:bg-purple-600"
-            >
-              Get AI Help
-                </button>
-
-            {/* Finish Quiz Button - Always visible but disabled unless on last question */}
-                <button
-              onClick={handleFinishQuiz}
-              disabled={currentQuestion !== questions.length - 1}
-              className={`px-3 py-1.5 text-white text-sm rounded-lg transition-all ${
-                currentQuestion === questions.length - 1
-                  ? 'bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600'
-                  : 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
-              }`}
-            >
-              Finish Quiz
-                </button>
         </div>
-          
-          {/* Next Button - Always visible */}
-          <button
-            onClick={handleNextQuestion}
-            disabled={currentQuestion === questions.length - 1}
-            className={`px-3 py-1.5 rounded-lg transition-all text-sm ${
-              currentQuestion === questions.length - 1
-                ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400 cursor-not-allowed'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600'
-            }`}
-          >
-            Next
-          </button>
-        </motion.div>
       </div>
     );
-  }, [currentQuestion, questions, questionStates, handleAnswerSelect, handleNextQuestion, handlePreviousQuestion, handleFinishQuiz, handleGetAIHelp, quizDetails.timePerQuestion, courses, selectedCourse]);
+  }, [currentQuestion, questions, questionStates, handleAnswerSelect, showResult, selectedAnswer, quizDetails.timePerQuestion, courses, selectedCourse]);
 
   // Memoized values
   const uniqueCourses = useMemo(() => {
@@ -2383,9 +2240,19 @@ if (currentQuestion >= questions?.length && questions?.length > 0) {
 
   // Reset the quiz generator to try again
   const resetQuizGenerator = () => {
+    // Reset all states related to quiz generation
+    setQuizStarted(false);
+    setQuestions([]);
+    setQuestionStates([]);
+    setCurrentQuestion(0);
+    setSelectedAnswer(null);
+    setScore(0);
+    setShowResult(false);
+    setLoading(false);
     setGenerationError(null);
     setDefaultQuestionsError(false);
-    setLoading(false);
+    
+    // If we have any code handling options in this function, use parseOptionText
   };
 
   // Function to show generation overlay

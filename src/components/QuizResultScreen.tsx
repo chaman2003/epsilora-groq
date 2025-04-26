@@ -32,6 +32,20 @@ const QuizResultScreen: React.FC<QuizResultScreenProps> = ({
   const { setQuizData } = useQuiz();
   const scorePercentageValue = Math.round((score / totalQuestions) * 100);
 
+  const parseOptionText = (opt: any): string => {
+    let optionText = '';
+    
+    if (typeof opt === 'string') {
+      optionText = opt;
+    } else if (opt !== null && typeof opt === 'object') {
+      if ('text' in opt) {
+        optionText = String(opt.text);
+      }
+    }
+    
+    return optionText.trim();
+  };
+
   const formatTimeSpent = (timeInSeconds: number) => {
     const minutes = Math.floor(timeInSeconds / 60);
     const seconds = timeInSeconds % 60;
@@ -47,18 +61,16 @@ const QuizResultScreen: React.FC<QuizResultScreenProps> = ({
         questions: questions.map((q, index) => ({
           question: q.question,
           options: q.options.map((opt: any, optIndex: number) => {
-            let optionText = typeof opt === 'object' && opt !== null && 'text' in opt 
-              ? (opt as {text: string}).text 
-              : String(opt);
+            const optionText = parseOptionText(opt);
             
-            optionText = optionText
+            const cleanedText = optionText
               .replace(/^([A-Da-d])[.):]\s*\1[.):]\s*/g, '')
               .replace(/^[A-Da-d][.):]\s*/g, '')
               .replace(/^[A-Da-d]\s+/g, '')
               .trim();
             
             return {
-              text: optionText,
+              text: cleanedText,
               label: String.fromCharCode(65 + optIndex)
             };
           }),
