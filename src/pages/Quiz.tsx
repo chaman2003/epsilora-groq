@@ -1049,7 +1049,7 @@ const generateQuiz = async () => {
     // Determine if we should show feedback
     const showFeedback = selectedAnswer !== null;
 
-                  return (
+    return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-200 dark:border-gray-700">
         <motion.h3 
           className="text-lg font-bold mb-4 text-gray-900 dark:text-white"
@@ -1062,9 +1062,28 @@ const generateQuiz = async () => {
         
         <div className="space-y-2">
           {currentQuestionObj.options.map((option, idx) => {
-            const optionText = typeof option === 'object' && option !== null && 'text' in option 
+            // Improved option text extraction with better cleaning
+            let optionText = typeof option === 'object' && option !== null && 'text' in option 
               ? (option as {text: string}).text 
               : String(option);
+            
+            // Enhanced regex to aggressively remove all types of letter prefixes 
+            optionText = optionText
+              // Remove double prefixes like "A. A:" or "D) D:"
+              .replace(/^([A-Da-d])[.):]\s*\1[.):]\s*/g, '')
+              // Remove all varieties of letter prefixes
+              .replace(/^[A-Da-d][.):]\s*/g, '')
+              .replace(/^[A-Da-d]\.\s*/g, '')
+              .replace(/^[A-Da-d]\)\s*/g, '')
+              .replace(/^[A-Da-d][:]\s*/g, '')
+              .replace(/^[A-Da-d]\s+/g, '')
+              // Also handle lowercase variations
+              .replace(/^[a-d][.):]\s*/g, '')
+              .replace(/^[a-d]\.\s*/g, '')
+              .replace(/^[a-d]\)\s*/g, '')
+              .replace(/^[a-d][:]\s*/g, '')
+              .replace(/^[a-d]\s+/g, '')
+              .trim();
             
             const optionLabel = String.fromCharCode(65 + idx); // A, B, C, D
             const isSelected = selectedAnswer === optionLabel;

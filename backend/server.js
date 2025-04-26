@@ -778,10 +778,33 @@ app.post('/api/quiz/generate', async (req, res) => {
             // Process options with defensive programming
             let options = [];
             if (Array.isArray(q.options) && q.options.length > 0) {
-              // Process existing options
+              // Process existing options with enhanced cleaning
               options = q.options
                 .filter(opt => opt && typeof opt === 'string')
-                .map(opt => opt.trim());
+                .map(opt => {
+                  // First clean the option text to remove any existing letter prefixes
+                  let cleanedText = opt.trim();
+                  
+                  // Aggressive cleaning to remove all types of letter prefixes
+                  cleanedText = cleanedText
+                    // Remove double prefixes like "A. A:" or "D) D:"
+                    .replace(/^([A-Da-d])[.):]\s*\1[.):]\s*/g, '')
+                    // Remove various letter prefix formats
+                    .replace(/^[A-Da-d][.):]\s*/g, '')
+                    .replace(/^[A-Da-d]\.\s*/g, '')
+                    .replace(/^[A-Da-d]\)\s*/g, '')
+                    .replace(/^[A-Da-d][:]\s*/g, '')
+                    .replace(/^[A-Da-d]\s+/g, '')
+                    // Also handle lowercase variations
+                    .replace(/^[a-d][.):]\s*/g, '')
+                    .replace(/^[a-d]\.\s*/g, '')
+                    .replace(/^[a-d]\)\s*/g, '')
+                    .replace(/^[a-d][:]\s*/g, '')
+                    .replace(/^[a-d]\s+/g, '')
+                    .trim();
+                    
+                  return cleanedText;
+                });
             }
             
             // Ensure we have exactly 4 options
@@ -793,14 +816,8 @@ app.post('/api/quiz/generate', async (req, res) => {
             // Ensure each option starts with the correct letter prefix (A., B., etc.)
             options = options.map((opt, idx) => {
               const prefix = String.fromCharCode(65 + idx) + '. ';
-              if (opt.startsWith(prefix) || opt.startsWith(String.fromCharCode(65 + idx) + '.')) {
-                return opt;
-              } else if (opt.match(/^[A-D][\.\)]\s/)) {
-                // Option already has a letter prefix but might be in a different format
-                return prefix + opt.replace(/^[A-D][\.\)]\s/, '');
-              } else {
-                return prefix + opt;
-              }
+              // At this point options should be clean of prefixes already, so just add the prefix
+              return prefix + opt;
             });
             
             // Process correctAnswer with multiple fallback strategies
