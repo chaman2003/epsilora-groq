@@ -15,17 +15,28 @@ const DefaultQuestionsError: React.FC<DefaultQuestionsErrorProps> = ({ onRetry }
         </div>
         <div className="ml-3">
           <h3 className="text-sm font-medium text-amber-800">
-            We couldn't generate specific questions
+            Generic Questions Detected - Unable to Generate Course-Specific Content
           </h3>
           <div className="mt-2 text-sm text-amber-700">
-            <p>Our AI couldn't generate meaningful questions about this course with the current settings.</p>
+            <p>Our AI couldn't generate specific questions about this course. Instead, it produced generic placeholder questions which wouldn't be valuable for learning.</p>
             
             <div className="mt-2">
-              <p className="font-semibold">Try these options:</p>
+              <p className="font-semibold">Why does this happen?</p>
               <ul className="list-disc pl-5 space-y-1 mt-1">
-                <li>Use a different difficulty level (try Medium or Easy)</li>
+                <li>The AI might not have enough detailed information about this specific course</li>
+                <li>The difficulty level may be too high for the available course data</li>
+                <li>The number of questions requested might be too many for this topic</li>
+                <li>The server might be experiencing higher than normal load</li>
+              </ul>
+            </div>
+            
+            <div className="mt-2">
+              <p className="font-semibold">Try these options instead:</p>
+              <ul className="list-disc pl-5 space-y-1 mt-1">
+                <li>Select a lower difficulty level (try Medium or Easy)</li>
                 <li>Request fewer questions (5-10 is optimal)</li>
-                <li>Select a different course with more detailed content</li>
+                <li>Choose a different course with more detailed content</li>
+                <li>Try again in a few minutes (our AI model might be busy)</li>
               </ul>
             </div>
           </div>

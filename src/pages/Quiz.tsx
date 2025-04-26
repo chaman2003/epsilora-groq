@@ -47,6 +47,7 @@ import {
   Filler
 } from 'chart.js';
 import { themeConfig } from '../config/theme';
+import QuizResultScreen from '../components/QuizResultScreen';
 
 // Register ChartJS components
 ChartJS.register(
@@ -523,6 +524,129 @@ const retryWithFewerQuestions = () => {
   generateQuiz();
 };
 
+// Make the isDefaultQuestion function more aggressive
+const isDefaultQuestion = (question: any, courseName: string): boolean => {
+  if (!question || !question.question) return true; // If no question or question text, consider it default
+  
+  // Stronger pattern matching for default questions
+  const questionPatterns = [
+    // Full default question pattern
+    new RegExp(`Question\\s+\\d+\\s+about\\s+${courseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'),
+    // Partial patterns that indicate generic questions
+    /Question\s+\d+\s+about/i,
+    /^Question\s+\d+$/i,
+    /placeholder question/i,
+    /example question/i,
+    /sample question/i
+  ];
+  
+  const optionPatterns = [
+    // Full default option pattern
+    /Option\s+[A-D]\s+for\s+question\s+\d+/i,
+    // Simple labels that are too generic
+    /^Option\s+[A-D]$/i,
+    /placeholder option/i,
+    /example option/i,
+    /sample option/i
+  ];
+  
+  // Check question text against all patterns
+  const questionIsDefault = questionPatterns.some(pattern => 
+    pattern.test(String(question.question)));
+  
+  // Check if options match default patterns
+  const optionsAreDefault = question.options && Array.isArray(question.options) &&
+    question.options.some((opt: any) => {
+      const optStr = typeof opt === 'string' ? opt : 
+                    (opt !== null && typeof opt === 'object' && 'text' in opt) ? opt.text : '';
+      return optionPatterns.some(pattern => pattern.test(String(optStr)));
+    });
+  
+  // Check if all options are very short (like single words)
+  const allOptionsVeryShort = question.options && 
+                             Array.isArray(question.options) && 
+                             question.options.length > 0 &&
+                             question.options.every((opt: any) => {
+                               const optStr = typeof opt === 'string' ? opt : 
+                                           (opt !== null && typeof opt === 'object' && 'text' in opt) ? opt.text : '';
+                               return String(optStr).trim().split(/\s+/).length <= 1;
+                             });
+  
+  return questionIsDefault || optionsAreDefault || allOptionsVeryShort;
+};
+
+// Add an emergency abort function for active quizzes showing default questions
+const checkAndAbortIfDefaultQuestions = () => {
+  if (!questions || !questions.length || !selectedCourse) return false;
+  
+  const courseName = courses.find(c => c._id === selectedCourse)?.name || '';
+  
+  // Check if any question in the active quiz is a default question
+  const hasDefaultQuestions = questions.some(q => isDefaultQuestion(q, courseName));
+  
+  if (hasDefaultQuestions) {
+    console.warn("Default questions detected during quiz - aborting quiz");
+    setQuizStarted(false);
+    setDefaultQuestionsError(true);
+    setLoading(false);
+    return true;
+  }
+  
+  return false;
+};
+
+// Update handleQuestionNav to check for default questions when navigating
+const handleQuestionNav = useCallback((index: number) => {
+  // First check if we have default questions
+  if (checkAndAbortIfDefaultQuestions()) {
+    return; // Don't proceed with navigation if we detected and aborted
+  }
+
+  if (index >= 0 && index < questions.length) {
+    setCurrentQuestion(index);
+    const state = questionStates[index];
+    setSelectedAnswer(state?.userAnswer || null);
+    setShowResult(state?.viewed || false);
+    setTimerActive(false);
+  }
+}, [questions.length, questionStates]);
+
+// Update handleNextQuestion to include default question check
+const handleNextQuestion = useCallback(() => {
+  // Check for default questions first
+  if (checkAndAbortIfDefaultQuestions()) {
+    return; // Don't proceed if we detected and aborted
+  }
+
+  if (currentQuestion < questions.length - 1) {
+    setCurrentQuestion(prev => prev + 1);
+    setTimeLeft(quizDetails.timePerQuestion);
+    setTimerActive(true);
+    setShowContinue(false);
+  }
+}, [currentQuestion, questions, quizDetails.timePerQuestion, questionStates]);
+
+// Update handlePreviousQuestion to include default question check
+const handlePreviousQuestion = useCallback(() => {
+  // Check for default questions first
+  if (checkAndAbortIfDefaultQuestions()) {
+    return; // Don't proceed if we detected and aborted
+  }
+
+  if (currentQuestion > 0) {
+    setCurrentQuestion(prev => prev - 1);
+    setShowContinue(true);
+  }
+}, [currentQuestion]);
+
+// Add a check at quiz startup
+useEffect(() => {
+  if (quizStarted && questions.length > 0) {
+    // Check for default questions when the quiz starts
+    checkAndAbortIfDefaultQuestions();
+  }
+}, [quizStarted, questions]);
+
 // Update the generateQuiz function to respect the user's selection for the number of questions
 const generateQuiz = async () => {
   if (!selectedCourse) {
@@ -582,6 +706,21 @@ const generateQuiz = async () => {
     }
 
     if (response.data) {
+      // Find the course name for detection
+      const courseName = courses.find(c => c._id === selectedCourse)?.name || '';
+
+      // Apply stronger detection checks to catch default questions
+      const defaultQuestionDetected = response.data.some((q: any) => 
+        isDefaultQuestion(q, courseName)
+      );
+
+      if (defaultQuestionDetected) {
+        console.warn("Detected default placeholder questions in the response");
+        setLoading(false);
+        setDefaultQuestionsError(true);
+        return;
+      }
+
       // Process the quiz questions with consistent formatting
       const formattedQuestions = response.data.map((q: any) => {
         // Ensure correctAnswer exists and is properly formatted
@@ -1052,6 +1191,33 @@ const generateQuiz = async () => {
   const renderQuestion = React.useCallback(() => {
     if (!questions || !questions[currentQuestion]) return null;
     const currentQuestionObj = questions[currentQuestion];
+    
+    // Find course name for detection
+    const courseName = courses.find(c => c._id === selectedCourse)?.name || '';
+    
+    // Detect if we're showing a default question
+    if (isDefaultQuestion(currentQuestionObj, courseName)) {
+      console.warn("Attempting to render a default question - stopping and showing error");
+      // Stop the quiz and show error
+      setQuizStarted(false);
+      setDefaultQuestionsError(true);
+      return (
+        <div className="flex flex-col items-center justify-center p-6 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200">
+          <h3 className="text-xl font-bold mb-4">Error: Default Questions Detected</h3>
+          <p className="text-center mb-4">The quiz contains placeholder questions. This usually happens when the AI couldn't generate proper questions.</p>
+          <button
+            onClick={() => {
+              setDefaultQuestionsError(false);
+              resetQuiz();
+            }}
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+          >
+            Return to Quiz Menu
+          </button>
+        </div>
+      );
+    }
+    
     const questionState = questionStates[currentQuestion] || {
       userAnswer: null,
       timeExpired: false,
@@ -1263,7 +1429,7 @@ const generateQuiz = async () => {
         </motion.div>
       </div>
     );
-  }, [currentQuestion, questions, questionStates, handleAnswerSelect, handleNextQuestion, handlePreviousQuestion, handleFinishQuiz, handleGetAIHelp, quizDetails.timePerQuestion]);
+  }, [currentQuestion, questions, questionStates, handleAnswerSelect, handleNextQuestion, handlePreviousQuestion, handleFinishQuiz, handleGetAIHelp, quizDetails.timePerQuestion, courses, selectedCourse]);
 
   // Memoized values
   const uniqueCourses = useMemo(() => {
@@ -2194,78 +2360,103 @@ if (currentQuestion >= questions?.length && questions?.length > 0) {
     }
     return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds} sec`;
   };
+
+  // Reset the quiz generator to try again
+  const resetQuizGenerator = () => {
+    setGenerationError(null);
+    setDefaultQuestionsError(false);
+    setLoading(false);
+  };
+
+  // Function to show generation overlay
+  const renderGenerationOverlay = (isLoading: boolean): React.ReactNode => {
+    return (
+      <QuizGenerationOverlay loading={isLoading} />
+    );
+  };
+  
+  // Add at the end of the component, right before the return statement:
+  // Add an effect to check questions as soon as they're loaded
+  useEffect(() => {
+    if (quizStarted && questions && questions.length > 0 && selectedCourse) {
+      // Find the course name for detection
+      const courseName = courses.find(c => c._id === selectedCourse)?.name || '';
+      
+      // Check if any question in the quiz is a default question
+      const hasDefaultQuestions = questions.some(q => isDefaultQuestion(q, courseName));
+      
+      if (hasDefaultQuestions) {
+        console.warn("Default questions detected after loading - stopping quiz");
+        setQuizStarted(false);
+        setDefaultQuestionsError(true);
+        setLoading(false);
+      }
+    }
+  }, [quizStarted, questions, selectedCourse, courses]);
+  
   return (
-  <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-16">
-    {/* Add the loading overlay */}
-    {renderGenerationOverlay(loading)}
-    
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      {/* Quiz Configuration UI */}
-      {!quizStarted && !showResult && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
-        >
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-              Generate a Quiz
-            </h1>
-            
-            {/* Default Questions Error component */}
-            {defaultQuestionsError && (
-              <DefaultQuestionsError 
-                onRetry={resetQuizGenerator} 
-              />
-            )}
-            
-            {/* Existing error component */}
-            {generationError && !defaultQuestionsError && (
-              <QuizGenerationError 
-                error={generationError} 
-                maxQuestions={maxQuestionCount}
-                onRetry={retryWithFewerQuestions}
-              />
-            )}
-            
-            {/* Course selection */}
-            {/* ... existing code ... */}
-        </div>
-      )}
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-16">
+      {/* Add the loading overlay */}
+      {renderGenerationOverlay(loading)}
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Quiz Configuration UI */}
+        {!quizStarted && !showResult && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                Generate a Quiz
+              </h1>
+              
+              {/* Default Questions Error component */}
+              {defaultQuestionsError && (
+                <DefaultQuestionsError 
+                  onRetry={resetQuizGenerator} 
+                />
+              )}
+              
+              {/* Existing error component */}
+              {generationError && !defaultQuestionsError && (
+                <QuizGenerationError 
+                  error={generationError} 
+                  maxQuestions={maxQuestionCount}
+                  onRetry={retryWithFewerQuestions} 
+                />
+              )}
+              
+              {/* Add the rest of your existing quiz configuration UI here */}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Quiz Results Screen */}
+        {showResult && (
+          <QuizResultScreen
+            score={score}
+            totalQuestions={questions.length}
+            questions={questions}
+            questionStates={questionStates}
+            resetQuiz={resetQuiz}
+            courseId={selectedCourse}
+            courseName={courses.find(c => c._id === selectedCourse)?.name || 'Unknown Course'}
+            difficulty={quizDetails.difficulty}
+            timeSpent={startTime ? Math.floor((new Date().getTime() - startTime.getTime()) / 1000) : 0}
+          />
+        )}
+
+        {/* Active Quiz UI goes here */}
+        {quizStarted && !showResult && (
+          <div className="quiz-container">
+            {/* Your existing quiz UI code */}
+          </div>
+        )}
+      </div>
     </div>
-  </div>
   );
 };
 
-const calculateStats = (history: any[]) => {
-    const totalQuizzes = history.length;
-    const totalQuestions = history.reduce((sum, quiz) => 
-        sum + (quiz.questions?.length || 0), 0);
-    const totalCorrect = history.reduce((sum, quiz) => 
-        sum + (quiz.correctAnswers || 0), 0);
-    
-    return {
-        totalQuizzes,
-        questionsAnswered: totalQuestions,
-        averageScore: totalQuestions > 0 ? 
-            ((totalCorrect / totalQuestions) * 100).toFixed(1) : '0',
-        latestScore: history.length > 0 ? 
-            ((history[0].correctAnswers / history[0].questions.length) * 100).toFixed(1) : '0'
-    };
-};
-
-const renderGenerationOverlay = (isLoading: boolean): React.ReactNode => {
-  return (
-    <QuizGenerationOverlay loading={isLoading} />
-  );
-};
-
-// Add a helper function for case-insensitive comparisons
 export default Quiz;
-
-// Reset the quiz generator to try again
-const resetQuizGenerator = () => {
-  setGenerationError(null);
-  setDefaultQuestionsError(false);
-  setLoading(false);
-};
