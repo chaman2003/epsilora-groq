@@ -18,9 +18,35 @@ export default defineConfig({
     host: true,
   },
   build: {
+    sourcemap: true,
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: false,
+        pure_funcs: ['console.debug'],
+      },
+      mangle: {
+        keep_classnames: true,
+        keep_fnames: true,
+      },
+      format: {
+        comments: false,
+      },
+      safari10: true,
+    },
     rollupOptions: {
-      // Explicitly add problematic dependencies to external
       external: ['zwitch'],
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          ui: ['framer-motion', 'lucide-react', 'react-hot-toast'],
+        },
+      },
+    },
+  },
+  esbuild: {
+    logOverride: { 
+      'this-is-undefined-in-esm': 'silent' 
     },
   },
 });
