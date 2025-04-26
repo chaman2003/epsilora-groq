@@ -559,7 +559,7 @@ const generateQuiz = async () => {
     }));
 
     // Send request to generate quiz
-    const response = await axiosInstance.post('/api/generate-quiz', quizParams, {
+    const response = await axiosInstance.post('/api/quiz/generate', quizParams, {
         timeout: 15000, // 15 seconds timeout
         headers: {
           'Authorization': `Bearer ${token}`,

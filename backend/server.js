@@ -542,6 +542,22 @@ async function retryOperation(operation, maxRetries = 3, initialDelay = 1000) {
   throw new Error('Max retries exceeded');
 }
 
+// Add a route handler for the legacy endpoint to maintain backward compatibility
+app.post('/api/generate-quiz', async (req, res) => {
+  console.log('Legacy endpoint /api/generate-quiz called, forwarding to /api/quiz/generate');
+  // Forward request to the actual endpoint handler
+  const quizRouteHandler = app._router.stack
+    .filter(layer => layer.route)
+    .find(layer => layer.route.path === '/api/quiz/generate' && layer.route.methods.post);
+  
+  if (quizRouteHandler && quizRouteHandler.handle) {
+    return quizRouteHandler.handle(req, res);
+  } else {
+    // Fallback to redirecting if we can't find the handler
+    res.redirect(307, '/api/quiz/generate');
+  }
+});
+
 // Update quiz generation endpoint to use Groq API
 app.post('/api/quiz/generate', async (req, res) => {
   const startTime = Date.now();
