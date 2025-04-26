@@ -604,7 +604,28 @@ app.post('/api/quiz/generate', async (req, res) => {
     }
 
     // Create an even more explicit prompt for Groq
-    const promptText = `Create ${actualNumberOfQuestions} multiple choice questions about "${course.name}" at ${difficulty} difficulty. Each question must have exactly 4 options labeled A, B, C, D and one correct answer. Format as a valid JSON array like this exact format: [{question:"question text",options:["A. option text","B. option text","C. option text","D. option text"],correctAnswer:"A"}]. Don't include any explanations, just return the JSON array.`;
+    const promptText = `Generate exactly ${actualNumberOfQuestions} multiple choice questions about "${course.name}" at ${difficulty} difficulty level. 
+
+VERY IMPORTANT INSTRUCTIONS:
+1. Each question must be specifically about the "${course.name}" course content
+2. Each question must have exactly 4 options labeled A, B, C, D
+3. Specify one correct answer for each question
+4. Return ONLY a valid JSON array with this exact format:
+[
+  {
+    "question": "Question text goes here?",
+    "options": [
+      "A. First option",
+      "B. Second option",
+      "C. Third option", 
+      "D. Fourth option"
+    ],
+    "correctAnswer": "A"
+  },
+  {...}
+]
+
+Do not include any explanations, markdown formatting, or text outside the JSON array. The response must be a parseable JSON array.`;
 
     console.log(`Generating ${actualNumberOfQuestions} questions at ${difficulty} difficulty for course: ${course.name}`);
     
@@ -739,6 +760,9 @@ app.post('/api/quiz/generate', async (req, res) => {
           // FINAL FALLBACK: Generate default questions when all parsing attempts fail
           console.log('All parsing strategies failed. Generating default questions...');
           
+          // Flag to indicate we're using default questions
+          let usingDefaultQuestions = true;
+
           questions = [];
           for (let i = 0; i < actualNumberOfQuestions; i++) {
             questions.push({
@@ -749,7 +773,8 @@ app.post('/api/quiz/generate', async (req, res) => {
                 `C. Option C for question ${i+1}`,
                 `D. Option D for question ${i+1}`
               ],
-              correctAnswer: "A" // Default to A
+              correctAnswer: "A", // Default to A
+              isDefaultQuestion: true // Flag to identify default questions
             });
           }
           console.log('Generated default questions as last resort');
@@ -895,6 +920,21 @@ app.post('/api/quiz/generate', async (req, res) => {
       // Final verification of question count
       console.log(`Final formatted question count: ${formattedQuestions.length} (requested: ${actualNumberOfQuestions})`);
       
+      // Check if we're returning default questions
+      const allDefaultQuestions = formattedQuestions.every(q => q.isDefaultQuestion === true);
+      if (allDefaultQuestions) {
+        console.warn('WARNING: Returning all default questions due to parsing failure');
+        return res.status(422).json({
+          message: 'Failed to generate meaningful quiz questions',
+          error: 'Quiz generation produced only generic questions. Please try again.',
+          isDefaultQuestions: true,
+          questions: formattedQuestions
+        });
+      }
+
+      // Remove the isDefaultQuestion flag before sending to client
+      formattedQuestions.forEach(q => delete q.isDefaultQuestion);
+
       // Perform final validation and return results
       console.log(`Quiz generation completed in ${Date.now() - startTime}ms with exactly ${formattedQuestions.length} questions`);
       return res.json(formattedQuestions);

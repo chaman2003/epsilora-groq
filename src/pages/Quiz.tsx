@@ -28,6 +28,7 @@ import axios from 'axios';
 import { Course, QuizAttempt } from '../types';
 import QuizLimitNotice from '../components/QuizLimitNotice';
 import QuizGenerationError from '../components/QuizGenerationError';
+import DefaultQuestionsError from '../components/DefaultQuestionsError';
 import QuizGenerationOverlay from '../components/quiz/QuizGenerationOverlay';
 import { format } from 'date-fns';
 import { Pie, Bar } from 'react-chartjs-2';
@@ -255,6 +256,9 @@ const Quiz: React.FC = () => {
 
   // Function to set up the showContinue state if it doesn't exist
   const [showContinue, setShowContinue] = useState(false);
+
+  // Add a state for default questions error
+  const [defaultQuestionsError, setDefaultQuestionsError] = useState<boolean>(false);
 
   // Move fetchQuizHistory declaration to the top of the component, before any useEffects
   const fetchQuizHistory = React.useCallback(async () => {
@@ -566,6 +570,16 @@ const generateQuiz = async () => {
           'Content-Type': 'application/json'
         }
       });
+
+    // Log the entire response to help with debugging
+    console.log('Quiz generation response:', response);
+
+    // Check if we received default questions (will be indicated by status code 422)
+    if (response.status === 422 && response.data?.isDefaultQuestions) {
+      setLoading(false);
+      setDefaultQuestionsError(true);
+      return;
+    }
 
     if (response.data) {
       // Process the quiz questions with consistent formatting
@@ -1557,8 +1571,19 @@ const handleToggleHistory = () => {
                   maxQuestionCount={maxQuestionCount} 
                 />
                 
+                {/* Display default questions error */}
+                {defaultQuestionsError && (
+                  <DefaultQuestionsError 
+                    onRetry={() => {
+                      setDefaultQuestionsError(false);
+                      setGenerationError(null);
+                      setLoading(false);
+                    }} 
+                  />
+                )}
+                
                 {/* Display generation error if there is one */}
-                {generationError && (
+                {generationError && !defaultQuestionsError && (
                   <QuizGenerationError 
                     error={generationError} 
                     maxQuestions={maxQuestionCount} 
@@ -2175,9 +2200,40 @@ if (currentQuestion >= questions?.length && questions?.length > 0) {
     {renderGenerationOverlay(loading)}
     
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      {/* Rest of existing UI... */}
-                </div>
-                    </div>
+      {/* Quiz Configuration UI */}
+      {!quizStarted && !showResult && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+              Generate a Quiz
+            </h1>
+            
+            {/* Default Questions Error component */}
+            {defaultQuestionsError && (
+              <DefaultQuestionsError 
+                onRetry={resetQuizGenerator} 
+              />
+            )}
+            
+            {/* Existing error component */}
+            {generationError && !defaultQuestionsError && (
+              <QuizGenerationError 
+                error={generationError} 
+                maxQuestions={maxQuestionCount}
+                onRetry={retryWithFewerQuestions}
+              />
+            )}
+            
+            {/* Course selection */}
+            {/* ... existing code ... */}
+        </div>
+      )}
+    </div>
+  </div>
   );
 };
 
@@ -2206,3 +2262,10 @@ const renderGenerationOverlay = (isLoading: boolean): React.ReactNode => {
 
 // Add a helper function for case-insensitive comparisons
 export default Quiz;
+
+// Reset the quiz generator to try again
+const resetQuizGenerator = () => {
+  setGenerationError(null);
+  setDefaultQuestionsError(false);
+  setLoading(false);
+};

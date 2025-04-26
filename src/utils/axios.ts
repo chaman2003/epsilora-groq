@@ -36,23 +36,33 @@ axiosInstance.interceptors.request.use(
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000; // 1 second
 const RETRY_STATUS_CODES = [408, 500, 502, 503, 504, 429];
+// Status codes we don't want to automatically retry (includes 422 for quiz generation)
+const NO_RETRY_STATUS_CODES = [400, 401, 403, 404, 422];
 
 // Add response interceptor with better error handling and retry logic
 axiosInstance.interceptors.response.use(
   (response) => {
+    // Special handling for 422 status - not an error but a validation issue
+    // This is used for quiz generation when default questions are returned
+    if (response.status === 422) {
+      console.warn('Received 422 status code with validation error:', response.data);
+      // Still pass through for component-specific handling
+    }
     return response;
   },
   async (error) => {
     const { config, response = {} } = error;
     
     // Skip retry for POST methods involving authentication and specific endpoints
-    const skipRetryEndpoints = ['/api/auth/login', '/api/auth/signup'];
+    const skipRetryEndpoints = ['/api/auth/login', '/api/auth/signup', '/api/quiz/generate'];
     
-    // Only retry if the request is retryable
+    // Only retry if the request is retryable and not in our no-retry list
     const isRetryable = config && 
                         !config._isRetry && 
                         !skipRetryEndpoints.some(endpoint => config.url?.includes(endpoint)) &&
-                        (!response || RETRY_STATUS_CODES.includes(response.status));
+                        (!response || 
+                         (RETRY_STATUS_CODES.includes(response.status) && 
+                          !NO_RETRY_STATUS_CODES.includes(response.status)));
     
     if (isRetryable) {
       config._isRetry = true;
