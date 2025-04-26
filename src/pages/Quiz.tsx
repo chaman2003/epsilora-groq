@@ -627,7 +627,7 @@ const handleNextQuestion = useCallback(() => {
 }, [currentQuestion, questions, quizDetails.timePerQuestion, questionStates]);
 
 // Update handlePreviousQuestion to include default question check
-const handlePreviousQuestion = useCallback(() => {
+const handlePreviousQuestion = React.useCallback(() => {
   // Check for default questions first
   if (checkAndAbortIfDefaultQuestions()) {
     return; // Don't proceed if we detected and aborted
@@ -1052,23 +1052,7 @@ const generateQuiz = async () => {
   }, [courses, selectedCourse, questions, questionStates, score, quizDetails.difficulty, setQuizData, navigate]);
 
   // Make sure handleNextQuestion and handlePreviousQuestion are being used
-  const handleNextQuestion = React.useCallback(() => {
-    if (!questions || !questionStates) return;
-    
-    if (currentQuestion < questions.length - 1) {
-      setCurrentQuestion(prev => prev + 1);
-        setTimeLeft(quizDetails.timePerQuestion);
-        setTimerActive(true);
-      setShowContinue(false);
-      }
-  }, [currentQuestion, questions, quizDetails.timePerQuestion, questionStates]);
-
-  const handlePreviousQuestion = React.useCallback(() => {
-    if (currentQuestion > 0) {
-      setCurrentQuestion(prev => prev - 1);
-      setShowContinue(true);
-    }
-  }, [currentQuestion]);
+  // Removed duplicate declarations of handleNextQuestion and handlePreviousQuestion
 
   // Update the handleFinishQuiz function to ensure consistent quiz data is passed to both results and AI assist
   const handleFinishQuiz = React.useCallback(() => {
@@ -1157,7 +1141,7 @@ const generateQuiz = async () => {
   }, [questions, questionStates, courses, selectedCourse, quizDetails.difficulty, calculateFinalScore, saveQuizResult, navigate, setQuizData]);
 
   // Function to handle navigation between questions via the question number buttons
-  const handleQuestionNav = React.useCallback((index: number) => {
+  /* const handleQuestionNav = React.useCallback((index: number) => {
     if (index >= 0 && index < questions.length) {
       setCurrentQuestion(index);
       const state = questionStates[index];
@@ -1165,7 +1149,7 @@ const generateQuiz = async () => {
       setShowResult(state?.viewed || false);
       setTimerActive(false);
     }
-  }, [questions.length, questionStates, setCurrentQuestion, setSelectedAnswer, setShowResult, setTimerActive]);
+  }, [questions.length, questionStates, setCurrentQuestion, setSelectedAnswer, setShowResult, setTimerActive]); */
 
   // Function to reset quiz state
   const resetQuiz = useCallback(() => {
