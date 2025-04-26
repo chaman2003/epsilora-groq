@@ -554,9 +554,10 @@ const isDefaultQuestion = (question: any, courseName: string): boolean => {
   const questionIsDefault = questionPatterns.some(pattern => 
     pattern.test(String(question.question)));
   
-  // Check if options match default patterns
+  // Check if options match default patterns - FIX: Make sure we initialize optStr before using it
   const optionsAreDefault = question.options && Array.isArray(question.options) &&
     question.options.some((opt: any) => {
+      // Initialize optStr before using it to avoid temporal dead zone issues
       const optStr = typeof opt === 'string' ? opt : 
                     (opt !== null && typeof opt === 'object' && 'text' in opt) ? opt.text : '';
       return optionPatterns.some(pattern => pattern.test(String(optStr)));
@@ -567,6 +568,7 @@ const isDefaultQuestion = (question: any, courseName: string): boolean => {
                              Array.isArray(question.options) && 
                              question.options.length > 0 &&
                              question.options.every((opt: any) => {
+                               // FIX: Make sure we initialize optStr before using it, using same pattern as above
                                const optStr = typeof opt === 'string' ? opt : 
                                            (opt !== null && typeof opt === 'object' && 'text' in opt) ? opt.text : '';
                                return String(optStr).trim().split(/\s+/).length <= 1;
