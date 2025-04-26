@@ -48,6 +48,8 @@ import {
 } from 'chart.js';
 import { themeConfig } from '../config/theme';
 import QuizResultScreen from '../components/QuizResultScreen';
+import SafeRender from '../components/SafeRender';
+import { ensureInitialized, safeArray, safeString, safeNumber, safeBoolean } from '../utils/safeVariables';
 
 // Register ChartJS components
 ChartJS.register(
@@ -2263,67 +2265,71 @@ if (currentQuestion >= questions?.length && questions?.length > 0) {
   };
   
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-16">
-      {/* Add the loading overlay */}
-      {renderGenerationOverlay(loading)}
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Quiz Configuration UI */}
-        {!quizStarted && !showResult && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5 }}
-          >
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-                Generate a Quiz
-              </h1>
-              
-              {/* Default Questions Error component */}
-              {defaultQuestionsError && (
-                <DefaultQuestionsError 
-                  onRetry={resetQuizGenerator} 
-                />
-              )}
-              
-              {/* Existing error component */}
-              {generationError && !defaultQuestionsError && (
-                <QuizGenerationError 
-                  error={generationError} 
-                  maxQuestions={maxQuestionCount}
-                  onRetry={retryWithFewerQuestions} 
-                />
-              )}
-              
-              {/* Add the rest of your existing quiz configuration UI here */}
+    <SafeRender fallback={<div className="min-h-screen flex items-center justify-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+    </div>}>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+        {/* Add the loading overlay */}
+        {renderGenerationOverlay(loading)}
+        
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Quiz Configuration UI */}
+          {!quizStarted && !showResult && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5 }}
+            >
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                  Generate a Quiz
+                </h1>
+                
+                {/* Default Questions Error component */}
+                {defaultQuestionsError && (
+                  <DefaultQuestionsError 
+                    onRetry={resetQuizGenerator} 
+                  />
+                )}
+                
+                {/* Existing error component */}
+                {generationError && !defaultQuestionsError && (
+                  <QuizGenerationError 
+                    error={generationError} 
+                    maxQuestions={maxQuestionCount}
+                    onRetry={retryWithFewerQuestions} 
+                  />
+                )}
+                
+                {/* Add the rest of your existing quiz configuration UI here */}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Quiz Results Screen */}
+          {showResult && (
+            <QuizResultScreen
+              score={score}
+              totalQuestions={questions.length}
+              questions={questions}
+              questionStates={questionStates}
+              resetQuiz={resetQuiz}
+              courseId={selectedCourse}
+              courseName={courses.find(c => c._id === selectedCourse)?.name || 'Unknown Course'}
+              difficulty={quizDetails.difficulty}
+              timeSpent={startTime ? Math.floor((new Date().getTime() - startTime.getTime()) / 1000) : 0}
+            />
+          )}
+
+          {/* Active Quiz UI goes here */}
+          {quizStarted && !showResult && (
+            <div className="quiz-container">
+              {/* Your existing quiz UI code */}
             </div>
-          </motion.div>
-        )}
-
-        {/* Quiz Results Screen */}
-        {showResult && (
-          <QuizResultScreen
-            score={score}
-            totalQuestions={questions.length}
-            questions={questions}
-            questionStates={questionStates}
-            resetQuiz={resetQuiz}
-            courseId={selectedCourse}
-            courseName={courses.find(c => c._id === selectedCourse)?.name || 'Unknown Course'}
-            difficulty={quizDetails.difficulty}
-            timeSpent={startTime ? Math.floor((new Date().getTime() - startTime.getTime()) / 1000) : 0}
-          />
-        )}
-
-        {/* Active Quiz UI goes here */}
-        {quizStarted && !showResult && (
-          <div className="quiz-container">
-            {/* Your existing quiz UI code */}
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </SafeRender>
   );
 };
 

@@ -12,6 +12,8 @@ import { normalizeMarkdownText } from '../utils/markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, coldarkDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useTheme } from '../contexts/ThemeContext';
+import SafeRender from '../components/SafeRender';
+import { ensureInitialized, safeArray, safeString, safeNumber, safeBoolean } from '../utils/safeVariables';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -1050,371 +1052,375 @@ const AIAssist: React.FC = () => {
     return;
   }, []);
 
-    return (
-    <div className="container mx-auto px-4">
-          {/* Chat History Sidebar */}
-          <AnimatePresence>
-            {isSidebarOpen && (
-              <motion.div
-                initial={{ x: -320, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: -320, opacity: 0 }}
-                transition={{ type: "spring", damping: 20 }}
-                className="fixed left-0 top-0 bottom-0 w-80 bg-white dark:bg-gray-800 shadow-2xl overflow-hidden border-r border-gray-200 dark:border-gray-700 z-50 flex flex-col"
-              >
-            {/* Sidebar Header with Gradient and Animation */}
-            <motion.div 
-              className="p-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white"
-              initial={{ y: -20 }}
-              animate={{ y: 0 }}
-              transition={{ duration: 0.3 }}
+  return (
+    <SafeRender fallback={<div className="container mx-auto px-4 flex items-center justify-center h-screen">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+    </div>}>
+      <div className="container mx-auto px-4">
+        {/* Chat History Sidebar */}
+        <AnimatePresence>
+          {isSidebarOpen && (
+            <motion.div
+              initial={{ x: -320, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -320, opacity: 0 }}
+              transition={{ type: "spring", damping: 20 }}
+              className="fixed left-0 top-0 bottom-0 w-80 bg-white dark:bg-gray-800 shadow-2xl overflow-hidden border-r border-gray-200 dark:border-gray-700 z-50 flex flex-col"
             >
-                  <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <History className="w-5 h-5 text-white/90" />
-                  <h2 className="text-xl font-bold">Chat History</h2>
-                      </div>
-                <motion.button
-                      onClick={() => setIsSidebarOpen(false)}
-                  className="p-2 rounded-full hover:bg-white/10 transition-colors"
-                  whileHover={{ rotate: 90 }}
-                  transition={{ duration: 0.2 }}
-                    >
-                      <X className="w-5 h-5" />
-                </motion.button>
-                  </div>
-            </motion.div>
-
-            {/* Search Input */}
-            <div className="p-3 border-b border-gray-200 dark:border-gray-700">
-                  <div className="relative">
-                    <input
-                      type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search conversations..."
-                  className="w-full p-2 pl-9 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                />
-                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
+          {/* Sidebar Header with Gradient and Animation */}
+          <motion.div 
+            className="p-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white"
+            initial={{ y: -20 }}
+            animate={{ y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+                <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <History className="w-5 h-5 text-white/90" />
+                <h2 className="text-xl font-bold">Chat History</h2>
                     </div>
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              <motion.button
+                    onClick={() => setIsSidebarOpen(false)}
+                className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                whileHover={{ rotate: 90 }}
+                transition={{ duration: 0.2 }}
                   >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-                  </div>
+                    <X className="w-5 h-5" />
+              </motion.button>
                 </div>
-                
-            {/* Chat History List with filtering based on search */}
-            <div className="flex-1 overflow-y-auto p-3">
-              {chatHistories.length > 0 ? (
-                <div className="space-y-2">
-                  {chatHistories
-                    .filter(chat => {
-                      if (!searchQuery.trim()) return true;
-                      // Search in chat content and potential title
-                      const chatContent = chat.messages.map(m => m.content).join(' ');
-                      const potentialTitle = generateChatTitle(chat.messages);
-                      return cleanMarkdown(chatContent).toLowerCase().includes(searchQuery.toLowerCase()) ||
-                             potentialTitle.toLowerCase().includes(searchQuery.toLowerCase());
-                    })
-                    .map((chat) => (
-                      <motion.div
-                          key={chat._id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        whileHover={{ scale: 1.02, boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)" }}
-                        className={`p-3 rounded-lg cursor-pointer transition-all border ${
-                          currentChatId === chat._id
-                            ? 'bg-indigo-50 border-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-700 shadow-md'
-                            : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/70'
-                        }`}
-                          onClick={() => {
-                            loadChat(chat._id);
-                            setIsSidebarOpen(false);
-                          }}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm text-gray-900 dark:text-white truncate">
-                              {generateChatTitle(chat.messages)}
+          </motion.div>
+
+          {/* Search Input */}
+          <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+                <div className="relative">
+                  <input
+                    type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search conversations..."
+                className="w-full p-2 pl-9 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+            />
+            <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500 dark:text-gray-400">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+              </div>
+            </div>
+            
+          {/* Chat History List with filtering based on search */}
+          <div className="flex-1 overflow-y-auto p-3">
+            {chatHistories.length > 0 ? (
+              <div className="space-y-2">
+                {chatHistories
+                  .filter(chat => {
+                    if (!searchQuery.trim()) return true;
+                    // Search in chat content and potential title
+                    const chatContent = chat.messages.map(m => m.content).join(' ');
+                    const potentialTitle = generateChatTitle(chat.messages);
+                    return cleanMarkdown(chatContent).toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           potentialTitle.toLowerCase().includes(searchQuery.toLowerCase());
+                  })
+                  .map((chat) => (
+                    <motion.div
+                        key={chat._id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      whileHover={{ scale: 1.02, boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)" }}
+                      className={`p-3 rounded-lg cursor-pointer transition-all border ${
+                        currentChatId === chat._id
+                          ? 'bg-indigo-50 border-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-700 shadow-md'
+                          : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/70'
+                      }`}
+                        onClick={() => {
+                          loadChat(chat._id);
+                          setIsSidebarOpen(false);
+                        }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm text-gray-900 dark:text-white truncate">
+                            {generateChatTitle(chat.messages)}
+                          </p>
+                          <div className="flex items-center mt-1">
+                            {/* Add type indicator */}
+                            {chat.type === 'quiz_review' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 mr-2">
+                                Quiz
+                                  </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 mr-2">
+                                Chat
+                              </span>
+                            )}
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {new Date(chat.createdAt).toLocaleDateString()} {new Date(chat.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </p>
-                            <div className="flex items-center mt-1">
-                              {/* Add type indicator */}
-                              {chat.type === 'quiz_review' ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 mr-2">
-                                  Quiz
-                                    </span>
-                              ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 mr-2">
-                                  Chat
-                                </span>
-                              )}
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {new Date(chat.createdAt).toLocaleDateString()} {new Date(chat.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </p>
-                            </div>
                           </div>
-                          <motion.button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                              if (confirm('Are you sure you want to delete this chat?')) {
-                                        deleteChat(chat._id);
-                              }
-                                      }}
-                            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.95 }}
-                                    >
-                            <Trash2 className="w-4 h-4" />
-                          </motion.button>
-                                  </div>
-                      </motion.div>
-                                  ))}
-                                  </div>
-              ) : (
-                <div className="text-center p-6 text-gray-500 dark:text-gray-400 flex flex-col items-center">
-                  <MessageSquare className="h-12 w-12 mb-2 opacity-30" />
-                  <p className="font-medium">No chat history available</p>
-                  <p className="text-sm mt-1">Start a new conversation to see it here</p>
-                                  </div>
-                                )}
-              
-              {/* "No results" message when search has no matches */}
-              {searchQuery && chatHistories.filter(chat => {
-                const chatContent = chat.messages.map(m => m.content).join(' ');
-                const potentialTitle = generateChatTitle(chat.messages);
-                return cleanMarkdown(chatContent).toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       potentialTitle.toLowerCase().includes(searchQuery.toLowerCase());
-              }).length === 0 && (
-                <div className="text-center p-4 text-gray-500 dark:text-gray-400">
-                  <p>No results found for "{searchQuery}"</p>
-                              </div>
-                  )}
-                </div>
+                        </div>
+                        <motion.button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                            if (confirm('Are you sure you want to delete this chat?')) {
+                                      deleteChat(chat._id);
+                            }
+                                    }}
+                          className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.95 }}
+                                  >
+                          <Trash2 className="w-4 h-4" />
+                        </motion.button>
+                                </div>
+                    </motion.div>
+                                ))}
+                                </div>
+            ) : (
+              <div className="text-center p-6 text-gray-500 dark:text-gray-400 flex flex-col items-center">
+                <MessageSquare className="h-12 w-12 mb-2 opacity-30" />
+                <p className="font-medium">No chat history available</p>
+                <p className="text-sm mt-1">Start a new conversation to see it here</p>
+                                </div>
+                              )}
+          
+          {/* "No results" message when search has no matches */}
+          {searchQuery && chatHistories.filter(chat => {
+            const chatContent = chat.messages.map(m => m.content).join(' ');
+            const potentialTitle = generateChatTitle(chat.messages);
+            return cleanMarkdown(chatContent).toLowerCase().includes(searchQuery.toLowerCase()) ||
+                   potentialTitle.toLowerCase().includes(searchQuery.toLowerCase());
+          }).length === 0 && (
+            <div className="text-center p-4 text-gray-500 dark:text-gray-400">
+              <p>No results found for "{searchQuery}"</p>
+                          </div>
+              )}
+            </div>
+            
+          {/* Control Buttons */}
+          <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80">
+            <motion.button
+              onClick={async () => {
+                // Create a new chat with welcome message
+                const initialMessages: Message[] = [{ role: 'assistant' as const, content: WELCOME_MESSAGE }];
+                const newChat = await createNewChat(initialMessages);
                 
-            {/* Control Buttons */}
-            <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80">
-              <motion.button
-                onClick={async () => {
-                  // Create a new chat with welcome message
-                  const initialMessages: Message[] = [{ role: 'assistant' as const, content: WELCOME_MESSAGE }];
-                  const newChat = await createNewChat(initialMessages);
-                  
-                  if (newChat) {
-                    setMessages(initialMessages);
-                    setCurrentChatId(newChat._id);
-                    localStorage.setItem('lastActiveChatId', newChat._id);
-                  }
-                  
-                  setIsSidebarOpen(false);
-                  toast.success('Started a new chat');
-                }}
-                className="w-full p-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg transition-colors flex items-center justify-center shadow-md"
-                whileHover={{ scale: 1.02, boxShadow: "0 4px 6px -1px rgba(99, 102, 241, 0.4)" }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                <span>New Chat</span>
-              </motion.button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                if (newChat) {
+                  setMessages(initialMessages);
+                  setCurrentChatId(newChat._id);
+                  localStorage.setItem('lastActiveChatId', newChat._id);
+                }
+                
+                setIsSidebarOpen(false);
+                toast.success('Started a new chat');
+              }}
+              className="w-full p-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg transition-colors flex items-center justify-center shadow-md"
+              whileHover={{ scale: 1.02, boxShadow: "0 4px 6px -1px rgba(99, 102, 241, 0.4)" }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              <span>New Chat</span>
+            </motion.button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-          {/* Backdrop */}
-          <AnimatePresence>
-            {isSidebarOpen && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsSidebarOpen(false)}
-                className="fixed inset-0 bg-black/30 dark:bg-black/50 backdrop-blur-sm z-40"
-              />
-            )}
-          </AnimatePresence>
+        {/* Backdrop */}
+        <AnimatePresence>
+          {isSidebarOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-black/30 dark:bg-black/50 backdrop-blur-sm z-40"
+            />
+          )}
+        </AnimatePresence>
 
-      {/* Main Chat Area - Enhanced with better styling */}
+    {/* Main Chat Area - Enhanced with better styling */}
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="bg-gradient-to-b from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 w-full max-w-6xl mx-auto my-6"
+    >
+      {/* Chat Header - Enhanced with motion */}
       <motion.div 
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="bg-gradient-to-b from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 w-full max-w-6xl mx-auto my-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.1, duration: 0.3 }}
+        className="p-3 bg-gradient-to-r from-indigo-600 via-purple-500 to-indigo-600 text-white bg-size-200 bg-pos-0 hover:bg-pos-100 transition-all duration-500"
       >
-        {/* Chat Header - Enhanced with motion */}
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.1, duration: 0.3 }}
-          className="p-3 bg-gradient-to-r from-indigo-600 via-purple-500 to-indigo-600 text-white bg-size-200 bg-pos-0 hover:bg-pos-100 transition-all duration-500"
-        >
-              <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm shadow-inner">
-                <Bot className="w-5 h-5" />
-                  </div>
-                  <div>
-                <h2 className="text-lg font-bold tracking-tight">AI Learning Assistant</h2>
-                <p className="text-indigo-100 text-xs mt-0.5">Powered by advanced Epsilora AI to help you learn</p>
-                  </div>
+            <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm shadow-inner">
+              <Bot className="w-5 h-5" />
                 </div>
-            <div className="flex items-center space-x-3">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                    onClick={async () => {
-                      // First save the current chat if it exists
-                      if (messages.length > 1 && currentChatId) {  
-                        // Save current chat to ensure it's persisted
-                        await saveMessagesToChat(currentChatId, messages);
-                      }
-                      
-                      // Create a new chat with welcome message
-                      const initialMessages: Message[] = [{ role: 'assistant' as const, content: WELCOME_MESSAGE }];
-                      const newChat = await createNewChat(initialMessages);
-                      
-                      if (newChat) {
-                        setMessages(initialMessages);
-                        setCurrentChatId(newChat._id);
-                        localStorage.setItem('lastActiveChatId', newChat._id);
-                      } else {
-                        // Fallback if API call fails
-                        setMessages(initialMessages);
-                        setCurrentChatId(null);
-                        localStorage.removeItem('lastActiveChatId');
-                      }
-                      
-                      setIsSidebarOpen(false);
-                      toast.success('Started a new chat');
-                    }}
-                className="p-2 hover:bg-white/20 rounded-lg transition-colors flex items-center space-x-2"
-              >
-                <Plus className="w-5 h-5" />
-                <span className="text-xs font-medium">New Chat</span>
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                    onClick={() => setIsSidebarOpen(true)}
-                className="p-2 hover:bg-white/20 rounded-lg transition-colors flex items-center space-x-2"
-              >
-                <History className="w-5 h-5" />
-                <span className="text-xs font-medium">History</span>
-              </motion.button>
+                <div>
+              <h2 className="text-lg font-bold tracking-tight">AI Learning Assistant</h2>
+              <p className="text-indigo-100 text-xs mt-0.5">Powered by advanced Epsilora AI to help you learn</p>
                 </div>
               </div>
-        </motion.div>
-
-        {/* Chat Messages - Enhanced with animations and better styling */}
-        <div className="h-[calc(100vh-250px)] overflow-y-auto bg-gray-50/50 dark:bg-gray-900/30 px-6 py-6">
-          <div className="max-w-5xl mx-auto space-y-6">
-            <AnimatePresence>
-              {messages.map((message, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} w-full`}
-                >
-                  {/* AI avatar icon - with enhanced appearance */}
-                  {message.role === 'assistant' && (
-                    <motion.div 
-                      whileHover={{ scale: 1.1, rotate: 5 }}
-                      className="flex-shrink-0 h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mr-3 shadow-md ring-2 ring-white dark:ring-gray-800"
-                    >
-                      <Bot className="h-5 w-5 text-white" />
-                    </motion.div>
-                  )}
-                  
-                  {/* Message bubble - with enhanced styling */}
-                  <motion.div 
-                    className={`relative mb-2 px-4 py-3 rounded-lg flex flex-col ${
-                      message.role === 'assistant'
-                        ? 'bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 text-gray-800 dark:text-gray-200 ml-2 mr-12 sm:mr-24'
-                        : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2 ml-12 sm:ml-24'
-                    }`}
-                  >
-                    <MessageContent content={message.content} />
-                  </motion.div>
-                  
-                  {/* User avatar icon - with enhanced appearance */}
-                  {message.role === 'user' && (
-                    <motion.div 
-                      whileHover={{ scale: 1.1, rotate: -5 }}
-                      className="flex-shrink-0 h-9 w-9 rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center ml-3 shadow-md ring-2 ring-white dark:ring-gray-800"
-                    >
-                      <User className="h-5 w-5 text-white" />
-                    </motion.div>
-                  )}
-                </motion.div>
-              ))}
-              </AnimatePresence>
-            </div>
-        </div>
-
-        {/* Input Area - Enhanced with better styling and animations */}
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.3 }}
-          className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 backdrop-blur-sm bg-opacity-90 dark:bg-opacity-90"
-        >
-          <div className="flex items-center space-x-3 max-w-5xl mx-auto">
-            <motion.div 
-              initial={{ width: "100%" }}
-              whileFocus={{ scale: 1.01 }}
-              className="relative flex-1 group"
-            >
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                  placeholder="Ask about your quiz or any courses related topics..."
-                className="w-full p-4 pr-12 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200 text-sm shadow-sm group-hover:shadow-md"
-              />
-              {input.length > 0 && (
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setInput('')}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <X className="w-4 h-4" />
-                </motion.button>
-              )}
-            </motion.div>
+          <div className="flex items-center space-x-3">
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-                  onClick={handleSend}
-                  disabled={loading || !input.trim()}
-              className="px-5 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 shadow-lg hover:shadow-xl text-sm"
-                >
-                  {loading ? (
-                    <div className="flex items-center space-x-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Sending...</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-2">
-                  <Send className="w-4 h-4" />
-                      <span>Send</span>
-                    </div>
-                  )}
+                  onClick={async () => {
+                    // First save the current chat if it exists
+                    if (messages.length > 1 && currentChatId) {  
+                      // Save current chat to ensure it's persisted
+                      await saveMessagesToChat(currentChatId, messages);
+                    }
+                    
+                    // Create a new chat with welcome message
+                    const initialMessages: Message[] = [{ role: 'assistant' as const, content: WELCOME_MESSAGE }];
+                    const newChat = await createNewChat(initialMessages);
+                    
+                    if (newChat) {
+                      setMessages(initialMessages);
+                      setCurrentChatId(newChat._id);
+                      localStorage.setItem('lastActiveChatId', newChat._id);
+                    } else {
+                      // Fallback if API call fails
+                      setMessages(initialMessages);
+                      setCurrentChatId(null);
+                      localStorage.removeItem('lastActiveChatId');
+                    }
+                    
+                    setIsSidebarOpen(false);
+                    toast.success('Started a new chat');
+                  }}
+              className="p-2 hover:bg-white/20 rounded-lg transition-colors flex items-center space-x-2"
+            >
+              <Plus className="w-5 h-5" />
+              <span className="text-xs font-medium">New Chat</span>
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+                  onClick={() => setIsSidebarOpen(true)}
+              className="p-2 hover:bg-white/20 rounded-lg transition-colors flex items-center space-x-2"
+            >
+              <History className="w-5 h-5" />
+              <span className="text-xs font-medium">History</span>
             </motion.button>
               </div>
-        </motion.div>
-      </motion.div>
             </div>
+      </motion.div>
+
+      {/* Chat Messages - Enhanced with animations and better styling */}
+      <div className="h-[calc(100vh-250px)] overflow-y-auto bg-gray-50/50 dark:bg-gray-900/30 px-6 py-6">
+        <div className="max-w-5xl mx-auto space-y-6">
+          <AnimatePresence>
+            {messages.map((message, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: index * 0.05 }}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} w-full`}
+              >
+                {/* AI avatar icon - with enhanced appearance */}
+                {message.role === 'assistant' && (
+                  <motion.div 
+                    whileHover={{ scale: 1.1, rotate: 5 }}
+                    className="flex-shrink-0 h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mr-3 shadow-md ring-2 ring-white dark:ring-gray-800"
+                  >
+                    <Bot className="h-5 w-5 text-white" />
+                  </motion.div>
+                )}
+                
+                {/* Message bubble - with enhanced styling */}
+                <motion.div 
+                  className={`relative mb-2 px-4 py-3 rounded-lg flex flex-col ${
+                    message.role === 'assistant'
+                      ? 'bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 text-gray-800 dark:text-gray-200 ml-2 mr-12 sm:mr-24'
+                      : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2 ml-12 sm:ml-24'
+                  }`}
+                >
+                  <MessageContent content={message.content} />
+                </motion.div>
+                
+                {/* User avatar icon - with enhanced appearance */}
+                {message.role === 'user' && (
+                  <motion.div 
+                    whileHover={{ scale: 1.1, rotate: -5 }}
+                    className="flex-shrink-0 h-9 w-9 rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center ml-3 shadow-md ring-2 ring-white dark:ring-gray-800"
+                  >
+                    <User className="h-5 w-5 text-white" />
+                  </motion.div>
+                )}
+              </motion.div>
+            ))}
+            </AnimatePresence>
+          </div>
+      </div>
+
+      {/* Input Area - Enhanced with better styling and animations */}
+      <motion.div 
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.3 }}
+        className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 backdrop-blur-sm bg-opacity-90 dark:bg-opacity-90"
+      >
+        <div className="flex items-center space-x-3 max-w-5xl mx-auto">
+          <motion.div 
+            initial={{ width: "100%" }}
+            whileFocus={{ scale: 1.01 }}
+            className="relative flex-1 group"
+          >
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                placeholder="Ask about your quiz or any courses related topics..."
+              className="w-full p-4 pr-12 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200 text-sm shadow-sm group-hover:shadow-md"
+            />
+            {input.length > 0 && (
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setInput('')}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-4 h-4" />
+              </motion.button>
+            )}
+          </motion.div>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+                onClick={handleSend}
+                disabled={loading || !input.trim()}
+            className="px-5 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 shadow-lg hover:shadow-xl text-sm"
+              >
+                {loading ? (
+                  <div className="flex items-center space-x-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Sending...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                <Send className="w-4 h-4" />
+                    <span>Send</span>
+                  </div>
+                )}
+          </motion.button>
+            </div>
+      </motion.div>
+    </motion.div>
+      </div>
+    </SafeRender>
   );
 };
 
@@ -1424,13 +1430,16 @@ const MessageContent = ({ content }: { content: string }) => {
   const { theme } = useTheme();
   const isLightTheme = theme === 'light';
   
+  // Safely initialize content value to prevent TDZ errors
+  const safeContent = ensureInitialized(content, '');
+  
   // Determine if this is a quiz review message
-  const isQuizReview = content.includes('Quiz Review:') || content.includes('# Quiz Review');
+  const isQuizReview = safeContent.includes('Quiz Review:') || safeContent.includes('# Quiz Review');
   
   // Special rendering for quiz content
   const renderQuizContent = () => {
     // Process content sections with proper markdown rendering
-    const sections = content.split(/(?=#{1,4}\s+\d+\.)/);
+    const sections = safeContent.split(/(?=#{1,4}\s+\d+\.)/);
     
     return (
       <div className="markdown-content">
@@ -1638,7 +1647,7 @@ const MessageContent = ({ content }: { content: string }) => {
         )
       }}
     >
-      {cleanMarkdown(content)}
+      {cleanMarkdown(safeContent)}
     </ReactMarkdown>
   );
 };
