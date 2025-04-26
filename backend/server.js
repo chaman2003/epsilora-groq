@@ -1474,6 +1474,100 @@ app.get('/api/list-models', async (req, res) => {
   }
 });
 
+// Add a new endpoint for course analysis
+app.post('/api/analyze-course', authenticateToken, async (req, res) => {
+  try {
+    const { courseUrl, prompt, hoursPerWeek } = req.body;
+    
+    if (!courseUrl || !prompt) {
+      return res.status(400).json({ 
+        message: 'Missing required parameters',
+        error: 'Course URL and prompt are required'
+      });
+    }
+    
+    // Check if API key is available
+    if (!GROQ_API_KEY) {
+      console.error('Groq API key not found');
+      return res.status(500).json({
+        message: 'Server configuration error',
+        error: 'API key not configured'
+      });
+    }
+    
+    console.log(`Analyzing course from URL: ${courseUrl}`);
+    
+    try {
+      // Call Groq API for course analysis
+      const generatedText = await callGroqAPI(prompt, 0.1, 1024);
+
+      if (!generatedText) {
+        throw new Error('No content generated from the API');
+      }
+
+      console.log('Raw Groq API response for course analysis:', generatedText);
+
+      // Clean the text for JSON parsing
+      let cleanedText = generatedText
+        .replace(/```(json|javascript|js)?/g, '') // Remove code block markers with various language indicators
+        .replace(/```/g, '')                      // Remove any remaining code block markers
+        .replace(/[\n\r\t]/g, ' ')                // Replace newlines and tabs with spaces
+        .trim();                                  // Trim whitespace
+      
+      // Parse the JSON from the cleaned text
+      let courseInfo;
+      try {
+        // Try to parse the JSON
+        courseInfo = JSON.parse(cleanedText);
+        
+        // Calculate milestone dates
+        const today = new Date();
+        const totalWeeks = parseInt(courseInfo.duration.split(' ')[0]) || courseInfo.milestones.length;
+        const weekInMilliseconds = 7 * 24 * 60 * 60 * 1000;
+        
+        courseInfo.milestones = courseInfo.milestones.map((milestone, index) => {
+          const milestoneDate = new Date(today.getTime() + (index + 1) * weekInMilliseconds);
+          return {
+            ...milestone,
+            deadline: milestoneDate.toISOString().split('T')[0],
+            week: index + 1
+          };
+        });
+
+        // Set course deadline to the last milestone date
+        const lastMilestone = courseInfo.milestones[courseInfo.milestones.length - 1];
+        courseInfo.deadline = lastMilestone.deadline;
+        
+      } catch (parseError) {
+        console.error('Course info parsing error:', parseError);
+        return res.status(500).json({
+          message: 'Failed to parse course information',
+          error: 'Invalid data format received from AI service'
+        });
+      }
+      
+      // Return the processed course information
+      return res.json({
+        message: 'Course analyzed successfully',
+        course: courseInfo
+      });
+      
+    } catch (error) {
+      console.error('Course analysis error:', error);
+      return res.status(500).json({
+        message: 'Failed to analyze course',
+        error: error.message || 'An unexpected error occurred'
+      });
+    }
+  } catch (error) {
+    console.error('Unexpected error in course analysis endpoint:', error);
+    return res.status(500).json({
+      message: 'Error analyzing course',
+      error: error.message || 'An unexpected error occurred'
+    });
+  }
+});
+
 // Error Handler Middleware
 const errorHandler = (err, req, res, next) => {
   console.error('Error:', {

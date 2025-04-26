@@ -552,11 +552,7 @@ const Courses: React.FC = () => {
 
   const extractCourseInfo = async (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!GROQ_API_KEY) {
-      toast.error('API key is not configured.');
-      return;
-    }
-
+    
     if (!courseUrl) {
       toast.error('Please enter a course URL');
       return;
@@ -599,68 +595,107 @@ IMPORTANT RULES:
 
       console.log('Sending prompt to Groq API:', prompt);
 
-      // Use Groq API instead of Gemini
-      const response = await fetch(
-        'https://api.groq.com/openai/v1/chat/completions',
-        {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${GROQ_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: 'gemma2-9b-it',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.1,
-            max_tokens: 1024
-          })
+      // Try server-side API call first (using the backend proxy endpoint)
+      try {
+        // Use our backend as a proxy to make the Groq API call
+        const response = await axiosInstance.post('/api/analyze-course', {
+          courseUrl,
+          prompt,
+          hoursPerWeek
+        });
+        
+        console.log('Response from backend proxy:', response.data);
+        
+        if (response.data && response.data.course) {
+          const parsedInfo = response.data.course;
+          
+          // Set the extracted course in state
+          setExtractedCourse(parsedInfo);
+          setShowPreview(true);
+          setIsLoading(false);
+          return;
         }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('API Error Response:', errorData);
-        throw new Error(`API request failed: ${errorData.error?.message || response.statusText}`);
+      } catch (proxyError) {
+        console.log('Backend proxy request failed, falling back to direct API call:', proxyError);
+        // Continue with direct API call as fallback
       }
 
-      const data = await response.json();
-      console.log('Raw API response:', data);
-      
-      if (!data.choices?.[0]?.message?.content) {
-        throw new Error('Invalid API response structure');
+      // Fallback to direct Groq API call if the proxy failed
+      try {
+        // Use Groq API instead of Gemini
+        const response = await fetch(
+          'https://api.groq.com/openai/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${GROQ_API_KEY}`
+            },
+            body: JSON.stringify({
+              model: 'gemma2-9b-it',
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0.1,
+              max_tokens: 1024
+            })
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('API Error Response:', errorData);
+          throw new Error(`API request failed: ${errorData.error?.message || response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log('Raw API response:', data);
+        
+        if (!data.choices?.[0]?.message?.content) {
+          throw new Error('Invalid API response structure');
+        }
+
+        const responseText = data.choices[0].message.content;
+        console.log('Raw response text:', responseText);
+        
+        const parsedInfo = cleanAndParseJSON(responseText);
+        
+        // Calculate milestone dates
+        const totalWeeks = parseInt(parsedInfo.duration.split(' ')[0]) || parsedInfo.milestones.length;
+        const weekInMilliseconds = 7 * 24 * 60 * 60 * 1000;
+        
+        parsedInfo.milestones = parsedInfo.milestones.map((milestone: any, index: number) => {
+          const milestoneDate = new Date(today.getTime() + (index + 1) * weekInMilliseconds);
+          return {
+            ...milestone,
+            deadline: milestoneDate.toISOString().split('T')[0],
+            week: index + 1
+          };
+        });
+
+        // Set course deadline to the last milestone date
+        const lastMilestone = parsedInfo.milestones[parsedInfo.milestones.length - 1];
+        parsedInfo.deadline = lastMilestone.deadline;
+
+        setExtractedCourse(parsedInfo);
+        setShowPreview(true);
+      } catch (directApiError) {
+        console.error('Direct API call error:', directApiError);
+        throw directApiError;
       }
-
-      const responseText = data.choices[0].message.content;
-      console.log('Raw response text:', responseText);
-      
-      const parsedInfo = cleanAndParseJSON(responseText);
-      
-      // Calculate milestone dates
-      const totalWeeks = parseInt(parsedInfo.duration.split(' ')[0]) || parsedInfo.milestones.length;
-      const weekInMilliseconds = 7 * 24 * 60 * 60 * 1000;
-      
-      parsedInfo.milestones = parsedInfo.milestones.map((milestone: any, index: number) => {
-        const milestoneDate = new Date(today.getTime() + (index + 1) * weekInMilliseconds);
-        return {
-          ...milestone,
-          deadline: milestoneDate.toISOString().split('T')[0],
-          week: index + 1
-        };
-      });
-
-      // Set course deadline to the last milestone date
-      const lastMilestone = parsedInfo.milestones[parsedInfo.milestones.length - 1];
-      
-      setExtractedCourse({
-        ...parsedInfo,
-        deadline: lastMilestone?.deadline || 
-                 new Date(today.getTime() + (totalWeeks * weekInMilliseconds)).toISOString().split('T')[0]
-      });
-      setShowPreview(true);
-
     } catch (error: any) {
-      console.error('Error extracting course info:', error);
-      toast.error(error.message || 'Error extracting course information');
+      console.error('Course extraction error:', error);
+      let errorMessage = 'Failed to extract course information.';
+      
+      if (error.message) {
+        if (error.message.includes('API key')) {
+          errorMessage = 'The AI service is unavailable. Please try again later or contact support.';
+        } else if (error.message.includes('Invalid API response')) {
+          errorMessage = 'Received an invalid response from the AI service. Please try again.';
+        } else {
+          errorMessage = `Error: ${error.message}`;
+        }
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
