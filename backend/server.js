@@ -1577,9 +1577,9 @@ app.get('/', (req, res) => {
 // Utility function to generate consistent fallback questions
 function generateFallbackQuestions(courseName, difficulty, count, timePerQuestion = 30) {
   const difficultyFactors = {
-    easy: { wordCount: 'few', complexity: 'simple' },
-    medium: { wordCount: 'some', complexity: 'moderately complex' },
-    hard: { wordCount: 'many', complexity: 'complex' }
+    easy: { wordCount: 'basics', complexity: 'fundamental concepts' },
+    medium: { wordCount: 'intermediate topics', complexity: 'practical applications' },
+    hard: { wordCount: 'advanced principles', complexity: 'theoretical frameworks' }
   };
   
   const factor = difficultyFactors[difficulty?.toLowerCase()] || difficultyFactors.medium;
@@ -1587,17 +1587,94 @@ function generateFallbackQuestions(courseName, difficulty, count, timePerQuestio
   
   // Course-related question templates
   const templates = [
-    `What is a key concept in ${courseName}?`,
-    `Which of the following best describes ${courseName}?`,
-    `In the context of ${courseName}, what is most important?`,
-    `Which statement about ${courseName} is correct?`,
-    `What is a common application of ${courseName}?`,
-    `How would you define ${courseName}?`,
-    `Which approach is most effective in ${courseName}?`,
-    `What principle underlies ${courseName}?`,
-    `Which term is most associated with ${courseName}?`,
-    `What is a fundamental aspect of ${courseName}?`
+    `What is a key ${factor.complexity} in ${courseName}?`,
+    `Which of the following best describes ${factor.wordCount} of ${courseName}?`,
+    `In the context of ${courseName}, which ${factor.complexity} is most important?`,
+    `Which statement about ${courseName} is correct regarding ${factor.wordCount}?`,
+    `What is a common application of ${factor.complexity} in ${courseName}?`,
+    `How would experts define ${factor.wordCount} in ${courseName}?`,
+    `Which approach is most effective when studying ${factor.complexity} of ${courseName}?`,
+    `What principle underlies the ${factor.wordCount} of ${courseName}?`,
+    `Which term is most closely associated with ${factor.complexity} in ${courseName}?`,
+    `What is considered a fundamental aspect of ${factor.wordCount} in ${courseName}?`
   ];
+  
+  // Generate course-related option templates based on the course name
+  const getOptionsForTemplate = (templateIndex, courseNameSafe) => {
+    // Create options that sound plausible for an educational context
+    const optionSets = [
+      // Set 1: Concepts
+      [
+        `The fundamental principles that form the foundation of ${courseNameSafe}`,
+        `The practical applications commonly used in ${courseNameSafe}`,
+        `The theoretical frameworks that explain ${courseNameSafe}`,
+        `The historical development and evolution of ${courseNameSafe}`
+      ],
+      // Set 2: Descriptions
+      [
+        `A systematic approach to understanding the core elements of ${courseNameSafe}`,
+        `A methodology for implementing solutions related to ${courseNameSafe}`,
+        `A conceptual framework used to analyze problems in ${courseNameSafe}`,
+        `A set of practices designed to optimize processes in ${courseNameSafe}`
+      ],
+      // Set 3: Importance
+      [
+        `Understanding the underlying theories and their applications`,
+        `Developing practical skills through hands-on experimentation`,
+        `Memorizing key terms and definitions precisely`,
+        `Analyzing real-world case studies and examples`
+      ],
+      // Set 4: Statements
+      [
+        `It requires both theoretical knowledge and practical application`,
+        `It originated in the early 20th century and has evolved significantly`,
+        `It incorporates principles from multiple related disciplines`,
+        `It focuses primarily on solving specific types of problems`
+      ],
+      // Set 5: Applications
+      [
+        `Solving complex problems in industry settings`,
+        `Developing new theoretical frameworks`,
+        `Educating students about fundamental concepts`,
+        `Improving existing systems and processes`
+      ],
+      // Sets 6-10 for remaining templates
+      [
+        `A discipline focused on systematic problem-solving`,
+        `The study of fundamental principles and their applications`,
+        `A methodological approach to understanding complex systems`,
+        `A field that integrates theory with practical implementation`
+      ],
+      [
+        `Breaking down complex problems into manageable components`,
+        `Applying established frameworks to new situations`,
+        `Combining theoretical knowledge with practical experimentation`,
+        `Following standardized protocols and best practices`
+      ],
+      [
+        `The relationship between theory and practice`,
+        `The systematic organization of knowledge`,
+        `The application of scientific methods`,
+        `The integration of diverse perspectives`
+      ],
+      [
+        `Analysis and critical thinking`,
+        `Implementation and execution`,
+        `Design and planning`,
+        `Evaluation and assessment`
+      ],
+      [
+        `Understanding core concepts before moving to applications`,
+        `Practical application of theoretical knowledge`,
+        `The integration of various subdisciplines`,
+        `The continuous evolution of methods and approaches`
+      ]
+    ];
+    
+    // Use the template index to select an appropriate option set
+    const setIndex = templateIndex % optionSets.length;
+    return optionSets[setIndex];
+  };
   
   for (let i = 0; i < count; i++) {
     // Select a template based on the index, with wraparound
@@ -1607,15 +1684,19 @@ function generateFallbackQuestions(courseName, difficulty, count, timePerQuestio
     // Generate consistent correctAnswer (rotating through A, B, C, D)
     const correctAnswer = String.fromCharCode(65 + (i % 4)); // A, B, C, D in sequence
     
+    // Get appropriate options for this template
+    const courseNameSafe = courseName || 'this subject';
+    const optionTexts = getOptionsForTemplate(templateIndex, courseNameSafe);
+    
+    // Create properly formatted options with A, B, C, D prefixes
+    const options = optionTexts.map((text, idx) => 
+      `${String.fromCharCode(65 + idx)}. ${text}`
+    );
+    
     questions.push({
       id: i + 1,
       question: question,
-      options: [
-        `A. First concept related to ${courseName}`,
-        `B. Second concept related to ${courseName}`,
-        `C. Third concept related to ${courseName}`,
-        `D. Fourth concept related to ${courseName}`
-      ],
+      options: options,
       correctAnswer: correctAnswer,
       timePerQuestion: Number(timePerQuestion) || 30
     });
