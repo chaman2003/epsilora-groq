@@ -564,8 +564,8 @@ app.post('/api/quiz/generate', async (req, res) => {
   try {
     const { courseId, numberOfQuestions, difficulty, timePerQuestion } = req.body;
     
-    // Increased maximum from 10 to 20 questions
-    const actualNumberOfQuestions = Math.min(Number(numberOfQuestions) || 5, 20);
+    // Get exact number of questions requested (with reasonable limits)
+    const actualNumberOfQuestions = Math.min(Math.max(Number(numberOfQuestions) || 5, 1), 20);
     
     if (!courseId || !actualNumberOfQuestions || !difficulty) {
       return res.status(400).json({ 
@@ -847,30 +847,39 @@ app.post('/api/quiz/generate', async (req, res) => {
         }
       }
       
-      // Ensure we have at least one question
-      if (formattedQuestions.length === 0) {
-        console.error('No valid questions could be formatted');
+      // Ensure we have EXACTLY the requested number of questions
+      if (formattedQuestions.length < actualNumberOfQuestions) {
+        console.log(`Only ${formattedQuestions.length} valid questions were processed, generating ${actualNumberOfQuestions - formattedQuestions.length} more to meet the target count of ${actualNumberOfQuestions}`);
         
-        // Return default questions as absolute last resort
-        for (let i = 0; i < actualNumberOfQuestions; i++) {
+        const remainingCount = actualNumberOfQuestions - formattedQuestions.length;
+        for (let i = 0; i < remainingCount; i++) {
+          const questionIndex = formattedQuestions.length + i + 1;
           formattedQuestions.push({
-            id: i + 1,
-            question: `Question ${i+1} about ${course.name}`,
+            id: questionIndex,
+            question: `Question ${questionIndex} about ${course.name}`,
             options: [
-              `A. Option A for question ${i+1}`,
-              `B. Option B for question ${i+1}`,
-              `C. Option C for question ${i+1}`,
-              `D. Option D for question ${i+1}`
+              `A. Option A for question ${questionIndex}`,
+              `B. Option B for question ${questionIndex}`,
+              `C. Option C for question ${questionIndex}`,
+              `D. Option D for question ${questionIndex}`
             ],
             correctAnswer: "A", // Default to A
             timePerQuestion: Number(timePerQuestion) || 30
           });
         }
-        console.log('Added default questions due to formatting failures');
       }
-
+      
+      // If we somehow got more questions than requested (shouldn't happen), trim the excess
+      if (formattedQuestions.length > actualNumberOfQuestions) {
+        console.log(`Trimming excess questions: ${formattedQuestions.length} generated but only ${actualNumberOfQuestions} requested`);
+        formattedQuestions.length = actualNumberOfQuestions;
+      }
+      
+      // Final verification of question count
+      console.log(`Final formatted question count: ${formattedQuestions.length} (requested: ${actualNumberOfQuestions})`);
+      
       // Perform final validation and return results
-      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with ${formattedQuestions.length} questions`);
+      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with exactly ${formattedQuestions.length} questions`);
       return res.json(formattedQuestions);
       
     } catch (error) {
