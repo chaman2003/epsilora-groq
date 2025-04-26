@@ -602,81 +602,125 @@ app.post('/api/quiz/generate', async (req, res) => {
       return res.status(404).json({ message: 'Course not found' });
     }
 
-    // Create an optimized prompt for Groq
-    const promptText = `Create ${actualNumberOfQuestions} multiple choice questions about "${course.name}" at ${difficulty} difficulty. Format: [{question,options:[A,B,C,D],correctAnswer}]. Be concise.`;
+    // Create an even more explicit prompt for Groq
+    const promptText = `Create ${actualNumberOfQuestions} multiple choice questions about "${course.name}" at ${difficulty} difficulty. Each question must have exactly 4 options labeled A, B, C, D and one correct answer. Format as a valid JSON array like this exact format: [{question:"question text",options:["A. option text","B. option text","C. option text","D. option text"],correctAnswer:"A"}]. Don't include any explanations, just return the JSON array.`;
 
     console.log(`Generating ${actualNumberOfQuestions} questions at ${difficulty} difficulty for course: ${course.name}`);
     
     try {
       // Call Groq API instead of Gemini
-      const generatedText = await callGroqAPI(promptText, 0.4, 2048);
+      const generatedText = await callGroqAPI(promptText, 0.3, 2048);
 
       if (!generatedText) {
         throw new Error('No content generated from the API');
       }
 
-      // Log the first portion of the response for debugging
-      console.log('Raw Groq API response (first 200 chars):', generatedText.substring(0, 200));
+      // Log the full response for debugging during development
+      console.log('Raw Groq API response:', generatedText);
 
-      // Enhanced cleaning and parsing with multiple fallback strategies
+      // Super enhanced cleaning and parsing with multiple fallback strategies
       let cleanedText = generatedText
-        .replace(/```(json|javascript)?/g, '') // Remove code block markers
-        .replace(/[\n\r\t]/g, ' ')            // Replace newlines and tabs with spaces
-        .trim();                              // Trim whitespace
+        .replace(/```(json|javascript|js)?/g, '') // Remove code block markers with various language indicators
+        .replace(/```/g, '')                      // Remove any remaining code block markers
+        .replace(/[\n\r\t]/g, ' ')                // Replace newlines and tabs with spaces
+        .trim();                                  // Trim whitespace
       
-      console.log('Cleaned text (first 200 chars):', cleanedText.substring(0, 200));
+      console.log('Cleaned text:', cleanedText);
       
-      // Handle JSON parsing errors with multiple fallback strategies
+      // Handle JSON parsing errors with multiple advanced fallback strategies
       let questions;
       try {
-        // Strategy 1: Try to find JSON array pattern [...]
-        const jsonArrayMatch = cleanedText.match(/\[\s*\{.*\}\s*\]/gs);
-        if (jsonArrayMatch && jsonArrayMatch[0]) {
+        // Strategy 1: Find the most complete JSON array pattern
+        const jsonArrayMatch = cleanedText.match(/(\[\s*\{.*\}\s*\])/s);
+        if (jsonArrayMatch && jsonArrayMatch[1]) {
           console.log('Found JSON array pattern, extracting...');
-          cleanedText = jsonArrayMatch[0];
-        } else {
-          // Strategy 2: Look for array with any content between brackets
-          const bracketMatch = cleanedText.match(/\[(.*)\]/s);
-          if (bracketMatch) {
-            console.log('Found bracket content, reconstructing array...');
-            cleanedText = `[${bracketMatch[1]}]`;
-          }
+          cleanedText = jsonArrayMatch[1];
+          
+          // Additional repair of common JSON issues
+          cleanedText = cleanedText
+            .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Ensure property names are quoted
+            .replace(/,\s*}/g, '}')                               // Remove trailing commas in objects
+            .replace(/,\s*]/g, ']');                              // Remove trailing commas in arrays
         }
         
         // Try to parse the JSON
         console.log('Attempting to parse JSON...');
-        questions = JSON.parse(cleanedText);
-        
-        // Ensure we have the right structure
-        if (!Array.isArray(questions)) {
-          console.error('Parsed result is not an array:', typeof questions);
-          throw new Error('Not a valid array of questions');
+        try {
+          questions = JSON.parse(cleanedText);
+          
+          // Ensure we have the right structure
+          if (!Array.isArray(questions)) {
+            console.error('Parsed result is not an array, type:', typeof questions);
+            throw new Error('Not a valid array of questions');
+          }
+          
+          console.log(`Successfully parsed ${questions.length} questions as JSON array`);
+        } catch (initialParseError) {
+          console.error('Initial JSON parsing failed:', initialParseError.message);
+          
+          // FALLBACK: Try to extract just the content within square brackets and repair it
+          const bracketContentMatch = cleanedText.match(/\[(.*)\]/s);
+          if (bracketContentMatch && bracketContentMatch[1]) {
+            console.log('Attempting to parse bracketed content...');
+            // Try to fix incomplete or malformed JSON objects within the array
+            let fixedContent = '[' + bracketContentMatch[1]
+              .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Quote all property names
+              .replace(/:\s*'([^']*)'/g, ':"$1"')                  // Replace single quotes with double quotes
+              .replace(/:\s*"([^"]*)'/g, ':"$1"')                  // Fix mismatched quotes (open double, close single)
+              .replace(/:\s*'([^"]*)"/g, ':"$1"')                  // Fix mismatched quotes (open single, close double)
+              .replace(/,(\s*[}\]])/g, '$1')                       // Remove trailing commas
+              + ']';
+            
+            try {
+              questions = JSON.parse(fixedContent);
+              console.log(`Successfully parsed bracketed content with ${questions.length} questions`);
+            } catch (bracketFixError) {
+              console.error('Bracket content parsing failed:', bracketFixError.message);
+              throw bracketFixError; // Let the outer catch handle it with manual parsing
+            }
+          } else {
+            throw initialParseError; // No bracketed content found, let the next fallback handle it
+          }
         }
         
-        console.log(`Successfully parsed ${questions.length} questions`);
-        
       } catch (parseError) {
-        console.error('Primary JSON Parsing Error:', parseError);
-        console.error('Failed text sample:', cleanedText.substring(0, 200));
+        console.error('All automatic JSON parsing failed:', parseError.message);
+        console.log('Attempting character-by-character JSON repair...');
         
-        // FALLBACK STRATEGY 1: Try to extract individual questions and build array manually
+        // MANUAL PARSING FALLBACK: Extract and repair individual question objects
         try {
-          console.log('Trying fallback parsing strategy...');
-          // Look for question patterns and build array manually
-          const questionMatches = cleanedText.match(/(\{[^{}]*"question":[^{}]*\})/g);
+          // Look for patterns that resemble question objects
+          const objectMatches = cleanedText.match(/\{[^{}]*question[^{}]*options[^{}]*correctAnswer[^{}]*\}/g);
           
-          if (questionMatches && questionMatches.length > 0) {
-            console.log(`Found ${questionMatches.length} question objects, attempting to parse individually...`);
+          if (objectMatches && objectMatches.length > 0) {
+            console.log(`Found ${objectMatches.length} potential question objects, parsing individually...`);
             
             questions = [];
-            for (const qMatch of questionMatches) {
+            for (const objStr of objectMatches) {
               try {
-                // Try to fix common JSON issues (missing quotes around keys, etc)
-                let fixedJson = qMatch.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
-                const qObj = JSON.parse(fixedJson);
-                questions.push(qObj);
+                // Advanced JSON repair for individual objects
+                let fixedJson = objStr
+                  .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Ensure all keys are properly quoted
+                  .replace(/:\s*'([^']*)'/g, ':"$1"')                  // Replace single quotes with double quotes for string values
+                  .replace(/([^\\])"/g, '$1\\"')                       // Escape unescaped quotes within values
+                  .replace(/"\s*:\s*"/g, '":"')                        // Fix spacing in key-value pairs
+                  .replace(/"\s*,\s*"/g, '","')                        // Fix spacing in arrays
+                  .replace(/,\s*}/g, '}');                             // Remove trailing commas
+                
+                // Make sure it starts and ends properly
+                if (!fixedJson.startsWith('{')) fixedJson = '{' + fixedJson;
+                if (!fixedJson.endsWith('}')) fixedJson = fixedJson + '}';
+                
+                console.log('Repaired individual question object:', fixedJson);
+                
+                try {
+                  const qObj = JSON.parse(fixedJson);
+                  questions.push(qObj);
+                } catch (e) {
+                  console.log(`Failed to parse individual question even after repair: ${e.message}`);
+                }
               } catch (e) {
-                console.log(`Failed to parse individual question: ${e.message}`);
+                console.log(`Error processing individual question: ${e.message}`);
               }
             }
             
@@ -686,100 +730,147 @@ app.post('/api/quiz/generate', async (req, res) => {
             
             console.log(`Successfully parsed ${questions.length} individual questions`);
           } else {
-            // FALLBACK STRATEGY 2: Generate default questions
-            console.log('No question patterns found, generating default questions');
-            
-            // Generate default questions as a last resort
-            questions = [];
-            for (let i = 0; i < actualNumberOfQuestions; i++) {
-              questions.push({
-                question: `Default question ${i+1} about ${course.name}`,
-                options: [
-                  `Option A for question ${i+1}`,
-                  `Option B for question ${i+1}`,
-                  `Option C for question ${i+1}`,
-                  `Option D for question ${i+1}`
-                ],
-                correctAnswer: "A" // Default to A
-              });
-            }
-            console.log('Generated default questions as fallback');
+            throw new Error('No question objects found in the text');
           }
-        } catch (fallbackError) {
-          console.error('All parsing strategies failed:', fallbackError);
-          return res.status(500).json({
-            message: 'Failed to parse generated quiz data',
-            error: 'Internal processing error'
-          });
+        } catch (manualParseError) {
+          console.error('Manual parsing failed:', manualParseError.message);
+          
+          // FINAL FALLBACK: Generate default questions when all parsing attempts fail
+          console.log('All parsing strategies failed. Generating default questions...');
+          
+          questions = [];
+          for (let i = 0; i < actualNumberOfQuestions; i++) {
+            questions.push({
+              question: `Question ${i+1} about ${course.name}`,
+              options: [
+                `A. Option A for question ${i+1}`,
+                `B. Option B for question ${i+1}`,
+                `C. Option C for question ${i+1}`,
+                `D. Option D for question ${i+1}`
+              ],
+              correctAnswer: "A" // Default to A
+            });
+          }
+          console.log('Generated default questions as last resort');
         }
       }
       
-      // Rest of the existing code...
-      // Format and validate each question
-      const formattedQuestions = questions
-        .slice(0, actualNumberOfQuestions) // Ensure we don't exceed the requested number
-        .map((q, index) => {
-          // Validate and normalize the question format
-          const options = Array.isArray(q.options) ? 
-            q.options.map(opt => opt.trim()) : 
-            ["Option A", "Option B", "Option C", "Option D"]; // Default if missing
+      // Format and validate each question with extra safeguards
+      console.log('Formatting and validating questions...');
+      const formattedQuestions = [];
+      
+      // Process each question individually to avoid failing the entire batch
+      if (Array.isArray(questions)) {
+        for (let i = 0; i < Math.min(questions.length, actualNumberOfQuestions); i++) {
+          try {
+            const q = questions[i];
             
-          // Enhanced correctAnswer validation
-          let correctAnswer = null;
-          
-          if (q.correctAnswer) {
-            // Parse and normalize the correctAnswer
-            let parsedAnswer = q.correctAnswer.trim().toUpperCase();
-            
-            // Handle various formats (A, A., A:, etc.)
-            if (parsedAnswer.match(/^([A-D])[.):]/)) {
-              parsedAnswer = parsedAnswer.charAt(0);
+            // Skip invalid questions
+            if (!q || typeof q !== 'object') {
+              console.warn(`Skipping invalid question at index ${i}:`, q);
+              continue;
             }
             
-            // Validate that it's a single letter from A-D
-            if (/^[A-D]$/.test(parsedAnswer)) {
-              correctAnswer = parsedAnswer;
+            // Ensure question text exists
+            const questionText = q.question?.trim() || `Question ${i + 1}`;
+            
+            // Process options with defensive programming
+            let options = [];
+            if (Array.isArray(q.options) && q.options.length > 0) {
+              // Process existing options
+              options = q.options
+                .filter(opt => opt && typeof opt === 'string')
+                .map(opt => opt.trim());
             }
+            
+            // Ensure we have exactly 4 options
+            while (options.length < 4) {
+              options.push(`Option ${String.fromCharCode(65 + options.length)}`);
+            }
+            options = options.slice(0, 4); // Limit to 4 options
+            
+            // Ensure each option starts with the correct letter prefix (A., B., etc.)
+            options = options.map((opt, idx) => {
+              const prefix = String.fromCharCode(65 + idx) + '. ';
+              if (opt.startsWith(prefix) || opt.startsWith(String.fromCharCode(65 + idx) + '.')) {
+                return opt;
+              } else if (opt.match(/^[A-D][\.\)]\s/)) {
+                // Option already has a letter prefix but might be in a different format
+                return prefix + opt.replace(/^[A-D][\.\)]\s/, '');
+              } else {
+                return prefix + opt;
+              }
+            });
+            
+            // Process correctAnswer with multiple fallback strategies
+            let correctAnswer = null;
+            
+            if (q.correctAnswer) {
+              // Parse and normalize the correctAnswer
+              let parsedAnswer = q.correctAnswer.toString().trim().toUpperCase();
+              
+              // Handle various formats (A, A., A:, "A", etc.)
+              if (parsedAnswer.match(/^["']?([A-D])["']?[.):]?$/)) {
+                parsedAnswer = parsedAnswer.match(/([A-D])/)[1];
+              }
+              
+              // Validate that it's a single letter from A-D
+              if (/^[A-D]$/.test(parsedAnswer)) {
+                correctAnswer = parsedAnswer;
+              }
+            }
+            
+            // If no valid correctAnswer, use deterministic selection based on index
+            if (!correctAnswer) {
+              // Use a deterministic selection to distribute answers
+              const possibleAnswers = ['A', 'B', 'C', 'D'];
+              const answerIndex = i % 4; // Simple rotation
+              correctAnswer = possibleAnswers[answerIndex];
+              console.warn(`Assigned deterministic answer ${correctAnswer} for question: "${questionText.substring(0, 30)}..."`);
+            }
+            
+            // Add the processed question to our results
+            formattedQuestions.push({
+              id: i + 1,
+              question: questionText,
+              options: options,
+              correctAnswer: correctAnswer,
+              timePerQuestion: Number(timePerQuestion) || 30
+            });
+            
+            console.log(`Successfully processed question ${i + 1}`);
+          } catch (formatError) {
+            console.error(`Error formatting question ${i + 1}:`, formatError.message);
+            // Continue processing other questions
           }
-          
-          // If no valid correctAnswer, randomly select one to avoid always using 'A'
-          if (!correctAnswer) {
-            // Use index to distribute answers more evenly across options
-            const possibleAnswers = ['A', 'B', 'C', 'D'];
-            // Use a combination of index and random selection for better distribution
-            const randomIndex = (index % 4 + Math.floor(Math.random() * 4)) % 4;
-            correctAnswer = possibleAnswers[randomIndex];
-            console.warn(`Assigning random correct answer ${correctAnswer} for question: "${q.question}"`);
-          }
-          
-          // Log the final processed question data for verification
-          console.log(`Question ${index+1} correctAnswer: ${correctAnswer}`);
-          
-          return {
-            id: index + 1,
-            question: q.question?.trim() || `Question ${index + 1}`,
-            options: options.slice(0, 4), // Ensure exactly 4 options
-            correctAnswer: correctAnswer, // Validated, normalized, and randomized
-            timePerQuestion
-          };
-        });
-
-      // Additional validation to ensure all questions have valid correctAnswers
-      const validatedQuestions = formattedQuestions.map((q, index) => {
-        // Double-check correctAnswer is valid, if not randomize it
-        if (!['A', 'B', 'C', 'D'].includes(q.correctAnswer)) {
-          console.error(`Found invalid correctAnswer after processing: ${q.correctAnswer}. Randomizing.`);
-          // Use a different randomization method to ensure variety
-          const possibleAnswers = ['A', 'B', 'C', 'D'];
-          const randomIndex = (index * 7 + Math.floor(Math.random() * 4)) % 4;
-          return {...q, correctAnswer: possibleAnswers[randomIndex]};
         }
-        return q;
-      });
+      }
+      
+      // Ensure we have at least one question
+      if (formattedQuestions.length === 0) {
+        console.error('No valid questions could be formatted');
+        
+        // Return default questions as absolute last resort
+        for (let i = 0; i < actualNumberOfQuestions; i++) {
+          formattedQuestions.push({
+            id: i + 1,
+            question: `Question ${i+1} about ${course.name}`,
+            options: [
+              `A. Option A for question ${i+1}`,
+              `B. Option B for question ${i+1}`,
+              `C. Option C for question ${i+1}`,
+              `D. Option D for question ${i+1}`
+            ],
+            correctAnswer: "A", // Default to A
+            timePerQuestion: Number(timePerQuestion) || 30
+          });
+        }
+        console.log('Added default questions due to formatting failures');
+      }
 
-      // Log completion and return the result
-      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with ${validatedQuestions.length} questions`);
-      return res.json(validatedQuestions);
+      // Perform final validation and return results
+      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with ${formattedQuestions.length} questions`);
+      return res.json(formattedQuestions);
       
     } catch (error) {
       console.error('Quiz Generation Error:', error);
