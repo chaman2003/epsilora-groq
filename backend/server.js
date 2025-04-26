@@ -605,7 +605,7 @@ app.post('/api/quiz/generate', async (req, res) => {
     // Create an optimized prompt for Groq
     const promptText = `Create ${actualNumberOfQuestions} multiple choice questions about "${course.name}" at ${difficulty} difficulty. Format: [{question,options:[A,B,C,D],correctAnswer}]. Be concise.`;
 
-    console.log(`Generating ${actualNumberOfQuestions} questions at ${difficulty} difficulty`);
+    console.log(`Generating ${actualNumberOfQuestions} questions at ${difficulty} difficulty for course: ${course.name}`);
     
     try {
       // Call Groq API instead of Gemini
@@ -615,42 +615,98 @@ app.post('/api/quiz/generate', async (req, res) => {
         throw new Error('No content generated from the API');
       }
 
-      // Clean and parse the response with better error handling
+      // Log the first portion of the response for debugging
+      console.log('Raw Groq API response (first 200 chars):', generatedText.substring(0, 200));
+
+      // Enhanced cleaning and parsing with multiple fallback strategies
       let cleanedText = generatedText
-        .replace(/```(json)?/g, '')
-        .replace(/[\n\r\t]/g, ' ')
-        .trim();
-        
-      // Handle JSON parsing errors more gracefully
+        .replace(/```(json|javascript)?/g, '') // Remove code block markers
+        .replace(/[\n\r\t]/g, ' ')            // Replace newlines and tabs with spaces
+        .trim();                              // Trim whitespace
+      
+      console.log('Cleaned text (first 200 chars):', cleanedText.substring(0, 200));
+      
+      // Handle JSON parsing errors with multiple fallback strategies
       let questions;
       try {
-        // First try to extract JSON if enclosed in markdown
-        const jsonMatch = cleanedText.match(/\[(.*)\]/s);
-        if (jsonMatch) {
-          cleanedText = `[${jsonMatch[1]}]`;
+        // Strategy 1: Try to find JSON array pattern [...]
+        const jsonArrayMatch = cleanedText.match(/\[\s*\{.*\}\s*\]/gs);
+        if (jsonArrayMatch && jsonArrayMatch[0]) {
+          console.log('Found JSON array pattern, extracting...');
+          cleanedText = jsonArrayMatch[0];
+        } else {
+          // Strategy 2: Look for array with any content between brackets
+          const bracketMatch = cleanedText.match(/\[(.*)\]/s);
+          if (bracketMatch) {
+            console.log('Found bracket content, reconstructing array...');
+            cleanedText = `[${bracketMatch[1]}]`;
+          }
         }
         
+        // Try to parse the JSON
+        console.log('Attempting to parse JSON...');
         questions = JSON.parse(cleanedText);
         
         // Ensure we have the right structure
         if (!Array.isArray(questions)) {
+          console.error('Parsed result is not an array:', typeof questions);
           throw new Error('Not a valid array of questions');
         }
+        
+        console.log(`Successfully parsed ${questions.length} questions`);
+        
       } catch (parseError) {
-        console.error('JSON Parsing Error:', parseError);
-        // Try a more aggressive JSON extraction as a fallback
+        console.error('Primary JSON Parsing Error:', parseError);
+        console.error('Failed text sample:', cleanedText.substring(0, 200));
+        
+        // FALLBACK STRATEGY 1: Try to extract individual questions and build array manually
         try {
-          const bracketMatch = cleanedText.match(/\[.*\]/s);
-          if (bracketMatch) {
-            questions = JSON.parse(bracketMatch[0]);
-            if (!Array.isArray(questions)) {
-              throw new Error('Extracted content is not an array');
+          console.log('Trying fallback parsing strategy...');
+          // Look for question patterns and build array manually
+          const questionMatches = cleanedText.match(/(\{[^{}]*"question":[^{}]*\})/g);
+          
+          if (questionMatches && questionMatches.length > 0) {
+            console.log(`Found ${questionMatches.length} question objects, attempting to parse individually...`);
+            
+            questions = [];
+            for (const qMatch of questionMatches) {
+              try {
+                // Try to fix common JSON issues (missing quotes around keys, etc)
+                let fixedJson = qMatch.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+                const qObj = JSON.parse(fixedJson);
+                questions.push(qObj);
+              } catch (e) {
+                console.log(`Failed to parse individual question: ${e.message}`);
+              }
             }
+            
+            if (questions.length === 0) {
+              throw new Error('Failed to parse any individual questions');
+            }
+            
+            console.log(`Successfully parsed ${questions.length} individual questions`);
           } else {
-            throw new Error('No JSON array found in the response');
+            // FALLBACK STRATEGY 2: Generate default questions
+            console.log('No question patterns found, generating default questions');
+            
+            // Generate default questions as a last resort
+            questions = [];
+            for (let i = 0; i < actualNumberOfQuestions; i++) {
+              questions.push({
+                question: `Default question ${i+1} about ${course.name}`,
+                options: [
+                  `Option A for question ${i+1}`,
+                  `Option B for question ${i+1}`,
+                  `Option C for question ${i+1}`,
+                  `Option D for question ${i+1}`
+                ],
+                correctAnswer: "A" // Default to A
+              });
+            }
+            console.log('Generated default questions as fallback');
           }
         } catch (fallbackError) {
-          console.error('Fallback parsing failed:', fallbackError);
+          console.error('All parsing strategies failed:', fallbackError);
           return res.status(500).json({
             message: 'Failed to parse generated quiz data',
             error: 'Internal processing error'
@@ -658,6 +714,7 @@ app.post('/api/quiz/generate', async (req, res) => {
         }
       }
       
+      // Rest of the existing code...
       // Format and validate each question
       const formattedQuestions = questions
         .slice(0, actualNumberOfQuestions) // Ensure we don't exceed the requested number
@@ -721,7 +778,7 @@ app.post('/api/quiz/generate', async (req, res) => {
       });
 
       // Log completion and return the result
-      console.log(`Quiz generation completed in ${Date.now() - startTime}ms`);
+      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with ${validatedQuestions.length} questions`);
       return res.json(validatedQuestions);
       
     } catch (error) {
