@@ -1,4 +1,3 @@
-
 # ✨ Epsilora-Groq ✨
 
 > AI-Powered Learning Platform with Groq Integration
@@ -19,14 +18,7 @@ Epsilora-Groq is an intelligent learning management system powered by Groq's AI 
 
 ---
 
-## 🧠 Team & Approach
-
-### Team Name:  
-`CodeCrafters`
-
-### Team Members:  
-- Chaman Sharma (GitHub: [chaman2003](https://github.com/chaman2003) / Lead Developer)
-- [Add other team members here]
+## 🧠 Approach
 
 ### Our Approach:  
 - We chose this problem because online learning often lacks engagement and personalization
@@ -331,4 +323,5 @@ We are excited to present Epsilora-Groq as our contribution to transforming onli
   
   [![Star this repo](https://img.shields.io/github/stars/chaman2003/epsilora-groq?style=social)](https://github.com/chaman2003/epsilora-groq/)
 </div>
+
 
