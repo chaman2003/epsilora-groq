@@ -719,6 +719,7 @@ Generate ${actualNumberOfQuestions} questions. Start your response with [ and en
     let usedModel = GROQ_MODEL_NAME;
     let retryAttempts = 0;
     const maxRetries = 2;
+    let questions = null; // Declare outside the loop for scope
     
     // Try quiz generation with retry logic
     while (retryAttempts <= maxRetries) {
@@ -751,7 +752,6 @@ Generate ${actualNumberOfQuestions} questions. Start your response with [ and en
       console.log('Cleaned text:', cleanedText);
       
       // Handle JSON parsing errors with multiple advanced fallback strategies
-      let questions;
       try {
         // Strategy 1: Find the most complete JSON array pattern
         const jsonArrayMatch = cleanedText.match(/(\[\s*\{.*\}\s*\])/s);
