@@ -591,12 +591,8 @@ const isQuizDefaultQuestions = (questions) => {
 
 // Helper function to switch to a better model for retry
 const getBetterModelForQuiz = () => {
-  // If using gemma2-9b-it, try llama-3.1-70b for better quality
-  if (GROQ_MODEL_NAME === 'gemma2-9b-it') {
-    return 'llama-3.1-70b-versatile';
-  }
-  // If using any other model, also try llama-3.1-70b
-  return 'llama-3.1-70b-versatile';
+  // Use mixtral-8x7b-32768 for better quality JSON output
+  return 'mixtral-8x7b-32768';
 };
 
 // Helper function to call Groq API with a specific model for retry logic
@@ -747,6 +743,10 @@ Generate ${actualNumberOfQuestions} questions. Start your response with [ and en
         .replace(/```(json|javascript|js)?/g, '') // Remove code block markers with various language indicators
         .replace(/```/g, '')                      // Remove any remaining code block markers
         .replace(/[\n\r\t]/g, ' ')                // Replace newlines and tabs with spaces
+        // Normalize Unicode special characters that break JSON
+        .replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')  // Normalize various dashes to ASCII hyphen
+        .replace(/[\u2018\u2019]/g, "'")  // Normalize smart quotes to ASCII apostrophe
+        .replace(/[\u201C\u201D]/g, '"')  // Normalize smart double quotes to ASCII quotes
         .trim();                                  // Trim whitespace
       
       console.log('Cleaned text:', cleanedText);
