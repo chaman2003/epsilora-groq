@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card } from '@tremor/react';
 import { motion } from 'framer-motion';
-
-// Use environment variable instead of hardcoded API key
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+import axiosInstance from '../../config/axios';
 
 interface Quote {
   text: string;
@@ -19,23 +17,16 @@ export const QuoteSection = () => {
     try {
       const prompt = 'Generate a short, inspiring quote about learning, education, or personal growth. Return ONLY a JSON object in this exact format: {"text": "quote text", "author": "author name"}. The response must be valid JSON with properly escaped quotes.';
       
-      // Use Groq API
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GROQ_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: 'gemma2-9b-it',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.7,
-          max_tokens: 500
-        })
+      // Use backend endpoint instead of direct API call
+      const response = await axiosInstance.post('/api/ai/assist', {
+        messages: [{ role: 'user', content: prompt }]
       });
 
-      const data = await response.json();
-      const text = data.choices[0].message.content;
+      if (!response.data || !response.data.message) {
+        throw new Error('Invalid response from AI service');
+      }
+
+      const text = response.data.message;
       
       // Clean the response text
       let cleanText = text

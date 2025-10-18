@@ -280,6 +280,9 @@ const Courses: React.FC = () => {
   const [milestoneProgress, setMilestoneProgress] = useState<Array<{ courseId: string; milestoneIndex: number; completed: boolean }>>([]);
 
   const navigate = useNavigate();
+  
+  // Remove GROQ_API_KEY from frontend - will use backend endpoint instead
+  // const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
   // Calculate progress based on completed milestones
   const calculateProgress = (course: any) => {
@@ -593,93 +596,25 @@ IMPORTANT RULES:
 7. Provide at least 3 items in objectives, milestones, and mainSkills arrays.
 8. Keep fields exactly as named in the example - don't rename any properties.`;
 
-      console.log('Sending prompt to Groq API:', prompt);
+      console.log('Sending course analysis request to backend...');
 
-      // Try server-side API call first (using the backend proxy endpoint)
-      try {
-        // Use our backend as a proxy to make the Groq API call
-        const response = await axiosInstance.post('/api/analyze-course', {
-          courseUrl,
-          prompt,
-          hoursPerWeek
-        });
+      // Use our backend as a proxy to make the Groq API call
+      const response = await axiosInstance.post('/api/analyze-course', {
+        courseUrl,
+        prompt,
+        hoursPerWeek
+      });
+      
+      console.log('Response from backend proxy:', response.data);
+      
+      if (response.data && response.data.course) {
+        const parsedInfo = response.data.course;
         
-        console.log('Response from backend proxy:', response.data);
-        
-        if (response.data && response.data.course) {
-          const parsedInfo = response.data.course;
-          
-          // Set the extracted course in state
-          setExtractedCourse(parsedInfo);
-          setShowPreview(true);
-          setIsLoading(false);
-          return;
-        }
-      } catch (proxyError) {
-        console.log('Backend proxy request failed, falling back to direct API call:', proxyError);
-        // Continue with direct API call as fallback
-      }
-
-      // Fallback to direct Groq API call if the proxy failed
-      try {
-        // Use Groq API instead of Gemini
-        const response = await fetch(
-          'https://api.groq.com/openai/v1/chat/completions',
-          {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${GROQ_API_KEY}`
-            },
-            body: JSON.stringify({
-              model: 'gemma2-9b-it',
-              messages: [{ role: 'user', content: prompt }],
-              temperature: 0.1,
-              max_tokens: 1024
-            })
-          }
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error('API Error Response:', errorData);
-          throw new Error(`API request failed: ${errorData.error?.message || response.statusText}`);
-        }
-
-        const data = await response.json();
-        console.log('Raw API response:', data);
-        
-        if (!data.choices?.[0]?.message?.content) {
-          throw new Error('Invalid API response structure');
-        }
-
-        const responseText = data.choices[0].message.content;
-        console.log('Raw response text:', responseText);
-        
-        const parsedInfo = cleanAndParseJSON(responseText);
-        
-        // Calculate milestone dates
-        const totalWeeks = parseInt(parsedInfo.duration.split(' ')[0]) || parsedInfo.milestones.length;
-        const weekInMilliseconds = 7 * 24 * 60 * 60 * 1000;
-        
-        parsedInfo.milestones = parsedInfo.milestones.map((milestone: any, index: number) => {
-          const milestoneDate = new Date(today.getTime() + (index + 1) * weekInMilliseconds);
-          return {
-            ...milestone,
-            deadline: milestoneDate.toISOString().split('T')[0],
-            week: index + 1
-          };
-        });
-
-        // Set course deadline to the last milestone date
-        const lastMilestone = parsedInfo.milestones[parsedInfo.milestones.length - 1];
-        parsedInfo.deadline = lastMilestone.deadline;
-
+        // Set the extracted course in state
         setExtractedCourse(parsedInfo);
         setShowPreview(true);
-      } catch (directApiError) {
-        console.error('Direct API call error:', directApiError);
-        throw directApiError;
+        setIsLoading(false);
+        return;
       }
     } catch (error: any) {
       console.error('Course extraction error:', error);

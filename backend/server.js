@@ -23,6 +23,7 @@ const __dirname = dirname(__filename);
 
 // Use environment variables
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL_NAME = process.env.GROQ_MODEL_NAME || 'gemma2-9b-it'; // Default fallback model
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -150,6 +151,7 @@ const connectToMongoDB = async () => {
 const callGroqAPI = async (prompt, temperature = 0.7, maxTokens = 2048) => {
   try {
     console.log('Calling Groq API with prompt:', prompt.substring(0, 100) + '...');
+    console.log('Using model:', GROQ_MODEL_NAME);
     
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -158,7 +160,7 @@ const callGroqAPI = async (prompt, temperature = 0.7, maxTokens = 2048) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'gemma2-9b-it',
+        model: GROQ_MODEL_NAME,
         messages: [{ role: 'user', content: prompt }],
         temperature: temperature,
         max_tokens: maxTokens
@@ -1492,17 +1494,17 @@ app.get('/api/list-models', async (req, res) => {
   }
   
   try {
-    // Return available Groq models
+    // Return the configured Groq model
     return res.json({ 
       version: 'v1', 
       models: [
         {
-          name: "gemma2-9b-it",
-          displayName: "Gemma 2 9B Instruction Tuned",
-          description: "Groq's gemma2-9b-it model"
+          name: GROQ_MODEL_NAME,
+          displayName: `Groq Model: ${GROQ_MODEL_NAME}`,
+          description: `Currently configured Groq API model: ${GROQ_MODEL_NAME}`
         }
       ],
-      message: 'Using Groq API with gemma2-9b-it model'
+      message: `Using Groq API with ${GROQ_MODEL_NAME} model`
     });
   } catch (error) {
     console.error('General error listing models:', error);
