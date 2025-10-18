@@ -561,6 +561,76 @@ app.post('/api/generate-quiz', async (req, res) => {
 });
 
 // Update quiz generation endpoint to use Groq API
+// Helper function to detect if questions are placeholders
+const isQuizDefaultQuestions = (questions) => {
+  if (!Array.isArray(questions) || questions.length === 0) return true;
+  
+  const placeholderPatterns = [
+    /question\s+\d+\s+about/i,
+    /option\s+[a-d]\s+for\s+question/i,
+    /placeholder|example|sample/i,
+    /^option\s+[a-d]$/i
+  ];
+  
+  // Check if any question text or options match placeholder patterns
+  for (const question of questions) {
+    const questionText = question.question || '';
+    const options = question.options || [];
+    
+    if (placeholderPatterns.some(pattern => pattern.test(questionText))) {
+      return true;
+    }
+    
+    if (options.some(opt => placeholderPatterns.some(pattern => pattern.test(opt)))) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
+// Helper function to switch to a better model for retry
+const getBetterModelForQuiz = () => {
+  // If using gemma2-9b-it, try llama-3.1-70b for better quality
+  if (GROQ_MODEL_NAME === 'gemma2-9b-it') {
+    return 'llama-3.1-70b-versatile';
+  }
+  // If using any other model, also try llama-3.1-70b
+  return 'llama-3.1-70b-versatile';
+};
+
+// Helper function to call Groq API with a specific model for retry logic
+const callGroqAPIWithModel = async (prompt, model, temperature = 0.7, maxTokens = 2048) => {
+  try {
+    console.log(`Calling Groq API with model: ${model}`);
+    
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: temperature,
+        max_tokens: maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Groq API error: ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error(`Error calling Groq API with model ${model}:`, error);
+    throw error;
+  }
+};
+
 app.post('/api/quiz/generate', async (req, res) => {
   const startTime = Date.now();
   try {
@@ -605,35 +675,64 @@ app.post('/api/quiz/generate', async (req, res) => {
       return res.status(404).json({ message: 'Course not found' });
     }
 
-    // Create an even more explicit prompt for Groq
-    const promptText = `Generate exactly ${actualNumberOfQuestions} multiple choice questions about "${course.name}" at ${difficulty} difficulty level. 
+    // Create a highly detailed and explicit prompt for Groq
+    const promptText = `You are an expert quiz generator. Generate exactly ${actualNumberOfQuestions} unique, course-specific multiple choice questions about the "${course.name}" course at ${difficulty} difficulty level.
 
-VERY IMPORTANT INSTRUCTIONS:
-1. Each question must be specifically about the "${course.name}" course content
-2. Each question must have exactly 4 options labeled A, B, C, D
-3. Specify one correct answer for each question
-4. Return ONLY a valid JSON array with this exact format:
+CRITICAL REQUIREMENTS - FOLLOW EXACTLY:
+1. Each question must be UNIQUE and specifically about "${course.name}" course content and topics
+2. Each question MUST have exactly 4 options
+3. Options must be labeled EXACTLY as: "A. text", "B. text", "C. text", "D. text"
+4. Specify the correct answer as a single letter: "A", "B", "C", or "D"
+5. Do NOT generate placeholder questions like "Question 1 about X" or "Option A for question 1"
+6. Do NOT use "example", "placeholder", or "sample" in question texts
+7. Return ONLY valid, parseable JSON - no other text before or after
+
+REQUIRED JSON STRUCTURE (must match exactly):
 [
   {
-    "question": "Question text goes here?",
+    "question": "Specific, meaningful question about ${course.name}?",
     "options": [
-      "A. First option",
-      "B. Second option",
-      "C. Third option", 
-      "D. Fourth option"
+      "A. First specific option",
+      "B. Second specific option",
+      "C. Third specific option",
+      "D. Fourth specific option"
     ],
     "correctAnswer": "A"
   },
-  {...}
+  {
+    "question": "Another specific question about ${course.name}?",
+    "options": [
+      "A. Option text",
+      "B. Option text",
+      "C. Option text",
+      "D. Option text"
+    ],
+    "correctAnswer": "B"
+  }
 ]
 
-Do not include any explanations, markdown formatting, or text outside the JSON array. The response must be a parseable JSON array.`;
+Generate ${actualNumberOfQuestions} questions. Start your response with [ and end with ]. No other text.`;
 
     console.log(`Generating ${actualNumberOfQuestions} questions at ${difficulty} difficulty for course: ${course.name}`);
     
-    try {
-      // Call Groq API instead of Gemini
-      const generatedText = await callGroqAPI(promptText, 0.3, 2048);
+    let generatedText = null;
+    let usedModel = GROQ_MODEL_NAME;
+    let retryAttempts = 0;
+    const maxRetries = 2;
+    
+    // Try quiz generation with retry logic
+    while (retryAttempts <= maxRetries) {
+      try {
+        // Call Groq API
+        const currentModel = retryAttempts > 0 ? getBetterModelForQuiz() : GROQ_MODEL_NAME;
+        usedModel = currentModel;
+        
+        if (retryAttempts > 0) {
+          console.log(`Retry attempt ${retryAttempts} with model: ${currentModel}`);
+          generatedText = await callGroqAPIWithModel(promptText, currentModel, 0.3, 2048);
+        } else {
+          generatedText = await callGroqAPI(promptText, 0.3, 2048);
+        }
 
       if (!generatedText) {
         throw new Error('No content generated from the API');
@@ -759,33 +858,83 @@ Do not include any explanations, markdown formatting, or text outside the JSON a
         } catch (manualParseError) {
           console.error('Manual parsing failed:', manualParseError.message);
           
-          // FINAL FALLBACK: Generate default questions when all parsing attempts fail
-          console.log('All parsing strategies failed. Generating default questions...');
+          // Check if response contains placeholder questions
+          if (isQuizDefaultQuestions(questions || [])) {
+            console.warn(`Detected placeholder questions. Retrying with better model...`);
+            retryAttempts++;
+            
+            // Throw to trigger the while loop retry
+            throw new Error('Placeholder questions detected - retrying with better model');
+          }
           
-          // Flag to indicate we're using default questions
-          let usingDefaultQuestions = true;
-
-          questions = [];
-          for (let i = 0; i < actualNumberOfQuestions; i++) {
-            questions.push({
-              question: `Question ${i+1} about ${course.name}`,
-              options: [
-                `A. Option A for question ${i+1}`,
-                `B. Option B for question ${i+1}`,
-                `C. Option C for question ${i+1}`,
-                `D. Option D for question ${i+1}`
-              ],
-              correctAnswer: "A", // Default to A
-              isDefaultQuestion: true // Flag to identify default questions
+          // If we've exhausted retries, throw error
+          if (retryAttempts >= maxRetries) {
+            console.error('Failed to generate valid questions after retries');
+            return res.status(422).json({
+              message: 'Failed to generate quiz questions',
+              error: 'Unable to generate course-specific questions. Please try again later.',
+              retryCount: retryAttempts
             });
           }
-          console.log('Generated default questions as last resort');
+          
+          throw manualParseError;
         }
       }
       
-      // Format and validate each question with extra safeguards
-      console.log('Formatting and validating questions...');
-      const formattedQuestions = [];
+      // Check if we got placeholder questions even after successful parsing
+      if (questions && Array.isArray(questions) && isQuizDefaultQuestions(questions)) {
+        console.warn(`Parsed questions appear to be placeholders. Retrying with better model...`);
+        retryAttempts++;
+        
+        if (retryAttempts > maxRetries) {
+          console.error('Failed to generate real questions after maximum retries');
+          return res.status(422).json({
+            message: 'Failed to generate quiz questions',
+            error: 'Unable to generate course-specific questions after multiple attempts. Please try again later.',
+            retriesAttempted: retryAttempts
+          });
+        }
+        
+        // Continue the retry loop
+        continue;
+      }
+      
+      // If we got here, we have valid, non-placeholder questions - break out of retry loop
+      console.log(`Successfully generated valid quiz questions on attempt ${retryAttempts + 1}`);
+      break;
+      
+    } catch (apiError) {
+      console.error(`API call attempt ${retryAttempts + 1} failed:`, apiError.message);
+      retryAttempts++;
+      
+      if (retryAttempts > maxRetries) {
+        console.error('All API retry attempts failed');
+        return res.status(500).json({
+          message: 'API request failed',
+          error: 'Unable to contact AI service. Please try again later.',
+          retriesAttempted: retryAttempts
+        });
+      }
+      
+      // Try again with better model
+      console.log(`Retrying quiz generation (attempt ${retryAttempts + 1}/${maxRetries + 1})...`);
+      continue;
+    }
+    }
+    
+    // If we got here, questions should be valid
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      console.error('No valid questions after all retry attempts');
+      return res.status(422).json({
+        message: 'Failed to generate quiz questions',
+        error: 'Unable to generate questions. Please try again.',
+        model: usedModel
+      });
+    }
+    
+    // Format and validate each question with extra safeguards
+    console.log('Formatting and validating questions...');
+    const formattedQuestions = [];
       
       // Process each question individually to avoid failing the entire batch
       if (Array.isArray(questions)) {
@@ -893,27 +1042,14 @@ Do not include any explanations, markdown formatting, or text outside the JSON a
       
       // Ensure we have EXACTLY the requested number of questions
       if (formattedQuestions.length < actualNumberOfQuestions) {
-        console.log(`Only ${formattedQuestions.length} valid questions were processed, generating ${actualNumberOfQuestions - formattedQuestions.length} more to meet the target count of ${actualNumberOfQuestions}`);
-        
-        const remainingCount = actualNumberOfQuestions - formattedQuestions.length;
-        for (let i = 0; i < remainingCount; i++) {
-          const questionIndex = formattedQuestions.length + i + 1;
-          formattedQuestions.push({
-            id: questionIndex,
-            question: `Question ${questionIndex} about ${course.name}`,
-            options: [
-              `A. Option A for question ${questionIndex}`,
-              `B. Option B for question ${questionIndex}`,
-              `C. Option C for question ${questionIndex}`,
-              `D. Option D for question ${questionIndex}`
-            ],
-            correctAnswer: "A", // Default to A
-            timePerQuestion: Number(timePerQuestion) || 30
-          });
-        }
+        console.log(`Warning: Only ${formattedQuestions.length} valid questions were processed out of ${actualNumberOfQuestions} requested`);
+        console.log(`This may indicate the API response was incomplete. Attempting to parse more carefully...`);
       }
       
-      // If we somehow got more questions than requested (shouldn't happen), trim the excess
+      // Do NOT generate default placeholder questions here - if we don't have enough valid questions,
+      // we should have retried with a better model already.
+      
+      // If we somehow got more questions than requested, trim the excess
       if (formattedQuestions.length > actualNumberOfQuestions) {
         console.log(`Trimming excess questions: ${formattedQuestions.length} generated but only ${actualNumberOfQuestions} requested`);
         formattedQuestions.length = actualNumberOfQuestions;
@@ -922,15 +1058,13 @@ Do not include any explanations, markdown formatting, or text outside the JSON a
       // Final verification of question count
       console.log(`Final formatted question count: ${formattedQuestions.length} (requested: ${actualNumberOfQuestions})`);
       
-      // Check if we're returning default questions
-      const allDefaultQuestions = formattedQuestions.every(q => q.isDefaultQuestion === true);
-      if (allDefaultQuestions) {
-        console.warn('WARNING: Returning all default questions due to parsing failure');
+      // Verify we have enough valid questions
+      if (formattedQuestions.length === 0) {
+        console.error('No valid questions were formatted');
         return res.status(422).json({
-          message: 'Failed to generate meaningful quiz questions',
-          error: 'Quiz generation produced only generic questions. Please try again.',
-          isDefaultQuestions: true,
-          questions: formattedQuestions
+          message: 'Failed to generate quiz questions',
+          error: 'Unable to format questions properly. Please try again.',
+          model: usedModel
         });
       }
 
@@ -938,24 +1072,15 @@ Do not include any explanations, markdown formatting, or text outside the JSON a
       formattedQuestions.forEach(q => delete q.isDefaultQuestion);
 
       // Perform final validation and return results
-      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with exactly ${formattedQuestions.length} questions`);
+      console.log(`Quiz generation completed in ${Date.now() - startTime}ms with exactly ${formattedQuestions.length} questions using model: ${usedModel}`);
       return res.json(formattedQuestions);
       
-    } catch (error) {
-      console.error('Quiz Generation Error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          message: 'Failed to generate quiz',
-          error: error.message || 'An unexpected error occurred during quiz generation'
-        });
-      }
-    }
   } catch (error) {
-    console.error('Quiz generation error:', error);
+    console.error('Quiz Generation Error:', error);
     if (!res.headersSent) {
       res.status(500).json({
-        message: 'Error generating quiz',
-        error: error.message || 'An unexpected error occurred'
+        message: 'Failed to generate quiz',
+        error: error.message || 'An unexpected error occurred during quiz generation'
       });
     }
   }
